@@ -50,7 +50,7 @@ La pestaña **Proyectos** permite agregar varias carpetas Node y alternar entre 
 
 La lectura local usa `package.json` y, cuando existe, `package-lock.json`. No ejecuta scripts ni instala paquetes. Los proyectos no se incluyen en las herramientas ni en las skills del agente IA.
 
-Limitación pendiente en el Mac de desarrollo: el selector nativo deja desactivado «Abrir» para carpetas del Escritorio. La carga y alternancia entre dos proyectos se verificó con copias de sus manifiestos en carpetas temporales accesibles; no se ha confirmado la causa del bloqueo del Escritorio.
+Se verificó la lectura del proyecto de prueba original en el Escritorio, sin cambiar permisos de macOS. El estado inicial del botón del selector puede aparecer desactivado en la lectura de accesibilidad antes de que termine de actualizarse; no se confirmó un bloqueo persistente del Escritorio.
 
 ## Paquetes de Mi Mac
 
