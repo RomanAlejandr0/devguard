@@ -13,26 +13,26 @@ Una herramienta detectada **no significa** que sea segura o esté actualizada. T
 
 ## Desarrollo
 
-Requisitos: Node.js y npm, Rust estable y herramientas de desarrollo de Xcode.
+Requisitos: Node.js y pnpm, Rust estable y herramientas de desarrollo de Xcode.
 
 ```sh
-npm install
-npm run tauri dev
+ppnpm install
+pnpm tauri dev
 ```
 
 Si Rust se instaló sin modificar tu perfil de shell, añade su carpeta a la sesión antes de iniciar:
 
 ```sh
 export PATH="$HOME/.cargo/bin:$PATH"
-npm run tauri dev
+pnpm tauri dev
 ```
 
-`npm run dev` muestra únicamente la interfaz en el navegador: la detección requiere la aplicación de escritorio. No se muestran resultados simulados.
+`pnpm dev` muestra únicamente la interfaz en el navegador: la detección requiere la aplicación de escritorio. No se muestran resultados simulados.
 
 ## Comprobaciones
 
 ```sh
-npm run build
+pnpm build
 cargo test --manifest-path src-tauri/Cargo.toml
 cargo check --manifest-path src-tauri/Cargo.toml
 ```
@@ -51,3 +51,13 @@ En **Elegir proyecto**, selecciona la carpeta que contiene `package.json`. DevGu
 El análisis no ejecuta scripts, no instala ni actualiza paquetes, no consulta la red y no recorre `node_modules`. Las versiones del archivo de bloqueo no confirman la instalación real ni la seguridad de los paquetes. Python, monorepos/workspaces completos y otros gestores (yarn/pnpm) quedan fuera de esta entrega.
 
 Hay una carpeta independiente de prueba junto al repositorio: `../devguard-prueba-node`. Contiene dos dependencias de producción (`ms`, `picocolors`) y una de desarrollo (`typescript`), con un archivo de bloqueo generado por npm. Se puede seleccionar desde el mismo flujo que cualquier otro proyecto Node.
+
+## Paquetes de Mi Mac
+
+«Detectar herramientas» consulta las versiones y obtiene inventarios de la instalación accesible de cada gestor:
+
+- Homebrew: fórmulas y aplicaciones cask con sus versiones instaladas.
+- npm: paquetes globales directos de esa instalación de Node/npm.
+- Python: paquetes visibles para pip en el intérprete encontrado. No recorre entornos virtuales ni todas las instalaciones de Python.
+
+Los paquetes se despliegan dentro de la tarjeta de cada herramienta, sin una sección duplicada. Cada resultado conserva su origen. Un gestor ausente o una consulta fallida se muestran por separado; no se interpretan como un inventario vacío. Las consultas tienen límites de tiempo y salida, sin instalar, actualizar ni analizar vulnerabilidades.

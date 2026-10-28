@@ -1,7 +1,15 @@
 mod detection;
+mod inventory;
 mod project;
 
 use tauri_plugin_dialog::DialogExt;
+
+#[tauri::command]
+async fn collect_inventory() -> Result<Vec<inventory::ManagerInventory>, String> {
+    tauri::async_runtime::spawn_blocking(inventory::collect_inventory)
+        .await
+        .map_err(|_| "No se pudo completar el inventario local.".to_string())
+}
 
 #[tauri::command]
 async fn detect_tools() -> Result<Vec<detection::ToolDetection>, String> {
@@ -36,7 +44,7 @@ async fn choose_node_project(
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![detect_tools, choose_node_project])
+        .invoke_handler(tauri::generate_handler![detect_tools, choose_node_project, collect_inventory])
         .run(tauri::generate_context!())
         .expect("error while running DevGuard");
 }

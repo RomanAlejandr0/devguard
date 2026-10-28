@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import "./App.css";
 import ProjectInventory from "./ProjectInventory";
+import ManagerPackages, { type ManagerInventory } from "./ManagerInventory";
 
 type ToolId = "node" | "python" | "homebrew";
 type ToolDetection = {
@@ -49,13 +50,15 @@ function Shield({ className = "" }: { className?: string }) {
   );
 }
 function App() {
+  const [inventories, setInventories] = useState<ManagerInventory[]>([]);
+  const inFlight = useRef(false);
   const [results, setResults] = useState<ToolDetection[]>([]);
   const [isScanning, setIsScanning] = useState(false);
   const [lastScan, setLastScan] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
   const foundCount = results.filter((tool) => tool.status === "found").length;
   async function detectTools() {
-    if (isScanning) return;
+    if (inFlight.current) return;
     setError(null);
     if (!isTauri()) {
       setError(
@@ -63,15 +66,26 @@ function App() {
       );
       return;
     }
+    inFlight.current = true;
+    setInventories([]);
     setIsScanning(true);
     try {
-      setResults(await invoke<ToolDetection[]>("detect_tools"));
+      const [toolsResult, packagesResult] = await Promise.allSettled([
+        invoke<ToolDetection[]>("detect_tools"),
+        invoke<ManagerInventory[]>("collect_inventory"),
+      ]);
+      setResults(toolsResult.status === "fulfilled" ? toolsResult.value : []);
+      setInventories(packagesResult.status === "fulfilled" ? packagesResult.value : []);
+      if (toolsResult.status === "rejected" || packagesResult.status === "rejected") {
+        setError("La consulta quedó incompleta. Vuelve a detectar para reintentarlo.");
+      }
       setLastScan(new Date());
     } catch {
       setError(
         "No pudimos completar la detección. Puedes volver a intentarlo; tus herramientas no se han modificado.",
       );
     } finally {
+      inFlight.current = false;
       setIsScanning(false);
     }
   }
@@ -207,6 +221,7 @@ function App() {
                       : result?.status === "error"
                         ? "No se pudo consultar"
                         : "Sin consultar";
+                const inventory = inventories.find((entry) => entry.id === (tool.id === "node" ? "npm" : tool.id));
                 return (
                   <article
                     className={`tool-card tool-${tool.id}`}
@@ -239,13 +254,14 @@ function App() {
                           : (result?.path ?? "Pendiente de detección")}
                       </code>
                     </div>
-                    {result && !isScanning && (
+                    {result && result.status !== "found" && !isScanning && (
                       <p
                         className={`tool-detail ${result.status === "error" ? "detail-error" : ""}`}
                       >
                         {result.detail}
                       </p>
                     )}
+                    {inventory && !isScanning ? <ManagerPackages inventory={inventory} /> : null}
                   </article>
                 );
               })}
