@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local Pi credentials and analysis sessions
+**/auth.json
+**/auth.json.*
+.pi/
+agent/.local/

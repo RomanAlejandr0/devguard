@@ -1,8 +1,17 @@
 import { useRef, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import "./App.css";
+import PiAgentPanel from "./PiAgentPanel";
 import ProjectInventory from "./ProjectInventory";
 import ManagerPackages, { type ManagerInventory } from "./ManagerInventory";
+
+type View = "mac" | "project" | "agent" | "settings";
+const views: { id: View; label: string }[] = [
+  { id: "mac", label: "Mi Mac" },
+  { id: "project", label: "Proyectos" },
+  { id: "agent", label: "Agente IA" },
+  { id: "settings", label: "Configuración IA" },
+];
 
 type ToolId = "node" | "python" | "homebrew";
 type ToolDetection = {
@@ -50,6 +59,11 @@ function Shield({ className = "" }: { className?: string }) {
   );
 }
 function App() {
+  const [view, setView] = useState<View>("mac");
+  function navigate(next: View) {
+    setView(next);
+    window.scrollTo(0, 0);
+  }
   const [inventories, setInventories] = useState<ManagerInventory[]>([]);
   const inFlight = useRef(false);
   const [results, setResults] = useState<ToolDetection[]>([]);
@@ -102,50 +116,20 @@ function App() {
           </span>
         </div>
         <div className="sidebar-section">ESPACIO LOCAL</div>
-        <div className="current-section">
-          <svg
-            width="19"
-            height="19"
-            viewBox="0 0 20 20"
-            fill="none"
-            aria-hidden="true"
-          >
-            <rect
-              x="3"
-              y="3"
-              width="5"
-              height="5"
-              rx="1"
-              stroke="currentColor"
-            />
-            <rect
-              x="12"
-              y="3"
-              width="5"
-              height="5"
-              rx="1"
-              stroke="currentColor"
-            />
-            <rect
-              x="3"
-              y="12"
-              width="5"
-              height="5"
-              rx="1"
-              stroke="currentColor"
-            />
-            <rect
-              x="12"
-              y="12"
-              width="5"
-              height="5"
-              rx="1"
-              stroke="currentColor"
-            />
-          </svg>
-          Mi Mac
-          <span className="section-dot" />
-        </div>
+        <nav className="section-nav" aria-label="Secciones">
+          {views.map((entry) => (
+            <button
+              key={entry.id}
+              type="button"
+              className="section-link"
+              aria-current={view === entry.id ? "page" : undefined}
+              onClick={() => navigate(entry.id)}
+            >
+              {entry.label}
+              {view === entry.id && <span className="section-dot" aria-hidden="true" />}
+            </button>
+          ))}
+        </nav>
         <div className="sidebar-bottom">
           <span className="local-dot" />
           <span>
@@ -156,6 +140,7 @@ function App() {
       <main>
 
         <div className="main-content">
+          <div hidden={view !== "mac"}>
           <div className="inventory-heading">
             <div>
               <h1>Herramientas de desarrollo</h1>
@@ -267,7 +252,16 @@ function App() {
               })}
             </div>
           </section>
-          <ProjectInventory />
+          </div>
+          <div className="project-page" hidden={view !== "project"}>
+            <ProjectInventory />
+          </div>
+          <div hidden={view !== "agent" && view !== "settings"}>
+            <PiAgentPanel
+              view={view === "settings" ? "settings" : "analysis"}
+              onOpenSettings={() => navigate("settings")}
+            />
+          </div>
 
         </div>
       </main>
