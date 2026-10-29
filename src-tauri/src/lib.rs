@@ -1,5 +1,6 @@
 mod detection;
 mod inventory;
+mod osv;
 mod pi;
 mod project;
 
@@ -19,6 +20,15 @@ async fn detect_tools() -> Result<Vec<detection::ToolDetection>, String> {
     tauri::async_runtime::spawn_blocking(detection::detect_tools)
         .await
         .map_err(|_| "No se pudo completar la detección local.".to_string())
+}
+
+#[tauri::command]
+async fn check_vulnerabilities(
+    packages: Vec<osv::PackageQuery>,
+) -> Result<osv::VulnerabilityReport, String> {
+    tauri::async_runtime::spawn_blocking(move || osv::check(&osv::Http::new(), packages))
+        .await
+        .map_err(|_| "No se pudo completar la consulta de vulnerabilidades.".to_string())?
 }
 
 #[tauri::command]
@@ -76,6 +86,7 @@ pub fn run() {
             detect_tools,
             choose_node_project,
             collect_inventory,
+            check_vulnerabilities,
             pi_request,
             pi_open_auth_url
         ])
