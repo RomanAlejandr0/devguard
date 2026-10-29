@@ -227,16 +227,18 @@ mod tests {
     use serde_json::json;
     use std::path::PathBuf;
 
+    static FIXTURE_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     struct Fixture(PathBuf);
     impl Fixture {
         fn new(manifest: &str, lock: Option<&str>) -> Self {
             let root = std::env::temp_dir().join(format!(
-                "devguard-project-{}-{}",
+                "devguard-project-{}-{}-{}",
                 std::process::id(),
                 std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
-                    .as_nanos()
+                    .as_nanos(),
+                FIXTURE_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
             ));
             fs::create_dir(&root).unwrap();
             fs::write(root.join("package.json"), manifest).unwrap();
@@ -267,6 +269,15 @@ mod tests {
             assert_eq!(report.dependencies[1].resolved.as_deref(), Some("2.1.4"));
             assert!(report.warnings.is_empty());
         }
+    }
+
+    #[test]
+    fn agent_reader_exposes_only_package_metadata() {
+        let fixture=Fixture::new(r#"{"name":"demo","dependencies":{"alpha":"^1"},"scripts":{"build":"DO_NOT_SEND"},"privateValue":"DO_NOT_SEND"}"#,Some(r#"{"lockfileVersion":3,"packages":{"":{"dependencies":{"alpha":"^1"},"scripts":{"postinstall":"DO_NOT_SEND"}},"node_modules/alpha":{"version":"1.2.0","resolved":"DO_NOT_SEND"},"node_modules/transitive":{"version":"DO_NOT_SEND"}}}"#));
+        let data=package_files(&fixture.0).unwrap();
+        assert!(!data.to_string().contains("DO_NOT_SEND"));
+        assert_eq!(data["manifest"]["dependencies"]["alpha"],"^1");
+        assert_eq!(data["lock"]["packages"]["node_modules/alpha"]["version"],"1.2.0");
     }
 
     #[test]
@@ -383,4 +394,48 @@ mod tests {
         .unwrap();
         assert!(fixture.report().unwrap().warnings[0].contains("No se pudo leer"));
     }
+}
+
+/// Read only the package metadata needed by Pi; no scripts, environment files or source code.
+pub fn package_files(selected: &Path) -> Result<Value, String> {
+    let root=selected.canonicalize().map_err(|_| "No se pudo abrir el proyecto.")?;
+    let package=read_json(&root,"package.json",MANIFEST_LIMIT)
+        .map_err(|_| "No se pudo leer package.json.")?.ok_or("La carpeta no contiene package.json.")?;
+    if !package.is_object() {return Err("package.json debe contener un objeto.".into());}
+    let mut manifest=serde_json::Map::new();
+    let mut names=std::collections::BTreeSet::new();
+    for (group,_) in GROUPS {
+        if let Some(entries)=package.get(group) {
+            let entries=entries.as_object().ok_or("La lista de dependencias no es válida.")?;
+            for (name,value) in entries {
+                if name.is_empty()||name.len()>214||value.as_str().is_none_or(|v|v.len()>4096) {return Err("Una declaración de dependencia no es compatible.".into());}
+                names.insert(name.clone());
+            }
+            manifest.insert(group.into(),Value::Object(entries.clone()));
+        }
+    }
+    if names.len()>500 {return Err("El análisis con Pi admite hasta 500 paquetes directos por proyecto.".into());}
+    let mut warnings=Vec::new();
+    let mut lockfile=None;
+    let mut lock=Value::Null;
+    match read_json(&root,"package-lock.json",LOCK_LIMIT) {
+        Ok(Some(value))=>{
+            lockfile=Some("package-lock.json");
+            if matches!(value.get("lockfileVersion").and_then(Value::as_u64),Some(2|3)) && value.get("packages").and_then(Value::as_object).is_some_and(|p|p.contains_key("")) {
+                let source=value["packages"].as_object().unwrap();
+                let mut packages=serde_json::Map::new();
+                let mut top=serde_json::Map::new();
+                for (group,_) in GROUPS {if let Some(v)=source[""] .get(group) {top.insert(group.into(),v.clone());}}
+                packages.insert("".into(),Value::Object(top));
+                for name in names {let key=format!("node_modules/{name}");if let Some(entry)=source.get(&key) {packages.insert(key,serde_json::json!({"version":entry.get("version"),"link":entry.get("link")}));}}
+                lock=serde_json::json!({"lockfileVersion":value["lockfileVersion"],"packages":packages});
+            } else {warnings.push("package-lock.json no tiene un formato v2/v3 compatible; las versiones resueltas quedan sin confirmar.");}
+        }
+        Ok(None)=>warnings.push("No hay package-lock.json. Se muestran versiones declaradas, sin una versión resuelta."),
+        Err(_)=>warnings.push("No se pudo leer package-lock.json; se muestran solo versiones declaradas."),
+    }
+    let name=package.get("name").and_then(Value::as_str).filter(|n|!n.is_empty()).map(str::to_owned).unwrap_or_else(||root.file_name().unwrap_or_default().to_string_lossy().into_owned());
+    let output=serde_json::json!({"name":name,"path":root.to_string_lossy(),"manifest":manifest,"lock":lock,"lockfile":lockfile,"warnings":warnings});
+    if output.to_string().len()>1024*1024 {return Err("Los metadatos del proyecto superan el límite del análisis con Pi.".into());}
+    Ok(output)
 }

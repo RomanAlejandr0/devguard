@@ -25,7 +25,7 @@ async fn detect_tools() -> Result<Vec<detection::ToolDetection>, String> {
 async fn choose_node_project(
     app: tauri::AppHandle,
     state: tauri::State<'_, pi::PiState>,
-) -> Result<Option<project::ProjectReport>, String> {
+) -> Result<Option<serde_json::Value>, String> {
     let bridge = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let window = app.get_webview_window("main")
@@ -40,8 +40,9 @@ async fn choose_node_project(
         let path = selected
             .into_path()
             .map_err(|_| "No se pudo interpretar la carpeta seleccionada.".to_string())?;
-        let report = project::read_project(&path)?;
         bridge.authorize_project(&path)?;
+        let report=bridge.request(&app,"analyze_project",serde_json::json!({}))
+            .map_err(|_| "Pi no pudo completar el análisis. Revisa proveedor y modelo en Configuración IA y vuelve a intentarlo.".to_string())?;
         Ok(Some(report))
     })
     .await

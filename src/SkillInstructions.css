@@ -1,0 +1,7 @@
+.skill-instructions { margin-top: 10px; color: #8e9eb2; font-size: 11px; }
+.skill-instructions summary { cursor: pointer; width: fit-content; padding: 5px 0; }
+.skill-instructions > div { margin: 8px 0 16px; padding: 14px; border: 1px solid #29394d; border-radius: 8px; background: #101a28; }
+.skill-instructions p { font-size: 11px; line-height: 1.6; }
+.skill-instructions pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.7; color: #cbd7e7; max-height: 380px; overflow-y: auto; margin: 12px 0 0; }
+.skill-instructions button { background: transparent; color: #9aebd0; border: 0; text-decoration: underline; cursor: pointer; }
+.skill-instructions summary:focus-visible, .skill-instructions pre:focus-visible { outline: 2px solid #a3f5dc; outline-offset: 3px; }

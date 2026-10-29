@@ -14,6 +14,11 @@ test('isolated catalog, denied method, cancel, failed analysis recovery', {timeo
  const call=(method,params={})=>new Promise((resolve,reject)=>{const key=String(++id);const timer=setTimeout(()=>reject(Error('Protocol timeout')),15000);pending.set(key,f=>{clearTimeout(timer);resolve(f);});child.stdin.write(JSON.stringify({id:key,method,params})+'\n');});
  try{
   const c=await call('catalog');assert.ok(c.result.providers.length);assert.ok(c.result.models.length);assert.deepEqual(c.result.skills.map(s=>s.id).sort(),['packages','tools']);assert.ok(c.result.providers.every(p=>!p.authenticated));
+  for (const id of ['tools','packages','project-packages']) {
+   const preview=await call('skill_read',{id});assert.equal(preview.result.id,id);assert.ok(preview.result.instructions.includes('---'));
+  }
+  assert.ok((await call('skill_read',{id:'../../auth.json'})).error);
+  assert.ok((await call('skill_write',{id:'tools',text:'changed'})).error);
   assert.ok((await call('exec',{command:'anything'})).error);
   assert.equal((await call('cancel')).result.cancelled,true);
   assert.ok((await call('analyze',{provider:'invalid',model:'invalid',skills:['tools']})).error);

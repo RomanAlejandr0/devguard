@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import "./PiAgentPanel.css";
+import SkillInstructions from "./SkillInstructions";
 
 type Provider = {
   id: string;
@@ -12,7 +13,7 @@ type Provider = {
 };
 type Model = { id: string; name: string; provider: string };
 type Skill = { id: string; name: string; description: string };
-type Catalog = { providers: Provider[]; models: Model[]; skills: Skill[] };
+type Catalog = { providers: Provider[]; models: Model[]; skills: Skill[]; selection?: {provider: string; model: string} | null };
 type Finding = {
   name: string;
   category: string;
@@ -137,10 +138,20 @@ export default function PiAgentPanel({ view, onOpenSettings }: Props) {
     };
   }, []);
 
+  useEffect(() => {
+    if (!catalog || !providerId || !modelId || !isTauri()) return;
+    let current = true;
+    void request("configure", {provider:providerId,model:modelId}).catch(() => {
+      if (current) setError("No se pudo guardar el proveedor y modelo para Proyectos. Vuelve a seleccionarlos.");
+    });
+    return () => {current=false;};
+  }, [catalog,providerId,modelId]);
+
   function applyCatalog(next: Catalog) {
     setCatalog(next);
     const nextProvider =
       next.providers.find((entry) => entry.id === providerId) ??
+      next.providers.find((entry) => entry.id === next.selection?.provider) ??
       next.providers.find((entry) => entry.authenticated) ??
       next.providers[0];
     const nextModels = next.models.filter(
@@ -149,6 +160,7 @@ export default function PiAgentPanel({ view, onOpenSettings }: Props) {
     setProviderId(nextProvider?.id ?? "");
     setModelId(
       nextModels.find((entry) => entry.id === modelId)?.id ??
+        nextModels.find((entry) => entry.id === next.selection?.model)?.id ??
         nextModels[0]?.id ??
         "",
     );
@@ -487,7 +499,8 @@ export default function PiAgentPanel({ view, onOpenSettings }: Props) {
               <p>No hay skills disponibles.</p>
             ) : (
               catalog.skills.map((skill) => (
-                <label className="pi-skill" key={skill.id}>
+                <div key={skill.id}>
+                <label className="pi-skill">
                   <input
                     type="checkbox"
                     checked={selectedSkills.includes(skill.id)}
@@ -505,6 +518,8 @@ export default function PiAgentPanel({ view, onOpenSettings }: Props) {
                     <small>{skill.description}</small>
                   </span>
                 </label>
+                <SkillInstructions id={skill.id} name={skill.name} />
+                </div>
               ))
             )}
           </fieldset>

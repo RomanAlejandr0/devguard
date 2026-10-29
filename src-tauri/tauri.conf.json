@@ -39,7 +39,8 @@
       "../agent/node_modules/": "agent/node_modules/",
       "../agent/tools/": "agent/tools/",
       "../agent/skills/": "agent/skills/",
-      "../agent/report.mjs": "agent/report.mjs"
+      "../agent/report.mjs": "agent/report.mjs",
+      "../agent/project-packages.mjs": "agent/project-packages.mjs"
     }
   }
 }

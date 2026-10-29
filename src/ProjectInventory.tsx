@@ -1,4 +1,6 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import SkillInstructions from "./SkillInstructions";
+import { listen } from "@tauri-apps/api/event";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 
 type Dependency = {
@@ -28,6 +30,21 @@ export default function ProjectInventory() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inFlight = useRef(false);
+  const cancelled = useRef(false);
+  const [progress,setProgress] = useState("");
+  useEffect(() => {
+    if (!isTauri()) return;
+    let active=true;
+    const subscription=listen<{event:string;data:{message?:string}}>("pi-event",({payload})=>{
+      if(active&&inFlight.current&&payload.event==="progress")setProgress(payload.data.message?.slice(0,200)??"");
+    });
+    return ()=>{active=false;void subscription.then(unlisten=>unlisten());};
+  }, []);
+  async function cancel() {
+    cancelled.current=true;
+    try {await invoke("pi_request",{method:"cancel",params:{}});setProgress("Cancelación solicitada…");}
+    catch {setError("No se pudo confirmar la cancelación. Espera a que termine el análisis.");}
+  }
 
   async function chooseProject() {
     if (inFlight.current) return;
@@ -37,10 +54,12 @@ export default function ProjectInventory() {
       return;
     }
     inFlight.current = true;
+    cancelled.current=false;
+    setProgress("Elige una carpeta. Pi listará sus paquetes usando el proveedor y modelo de Configuración IA.");
     setPending(true);
     try {
       const report = await invoke<ProjectReport | null>("choose_node_project");
-      if (report) {
+      if (report && !cancelled.current) {
         setProjects((current) => {
           const existing = current.some((entry) => entry.path === report.path);
           return existing
@@ -50,10 +69,11 @@ export default function ProjectInventory() {
         setSelectedPath(report.path);
       }
     } catch (reason) {
-      setError(typeof reason === "string" ? reason : "No se pudo leer el proyecto. Inténtalo con otra carpeta.");
+      if (!cancelled.current) setError(typeof reason === "string" ? reason : "Pi no pudo analizar los paquetes. Revisa Configuración IA.");
     } finally {
       inFlight.current = false;
       setPending(false);
+      setProgress("");
     }
   }
 
@@ -69,13 +89,15 @@ export default function ProjectInventory() {
       <div className="project-heading">
         <h2 id="project-title">Proyectos</h2>
         <button className="project-button" onClick={chooseProject} disabled={pending}>
-          {pending ? "Leyendo proyecto…" : "Agregar proyecto"}
+          {pending ? "Analizando con Pi…" : "Agregar proyecto"}
         </button>
+        {pending && <button className="project-button" type="button" onClick={()=>void cancel()}>Cancelar</button>}
       </div>
+      <SkillInstructions id="project-packages" name="Paquetes del proyecto" />
       <div aria-live="polite" aria-atomic="true">
         {error ? <p className="project-error" role="alert">{error}</p> : null}
-        {!project && !pending && !error ? <p className="project-empty">Agrega carpetas para consultar las dependencias de cada proyecto. Por ahora se admiten proyectos Node.</p> : null}
-        {pending ? <p className="project-empty">Selecciona una carpeta de Node para leer sus archivos de dependencias.</p> : null}
+        {!project && !pending && !error ? <p className="project-empty">Agrega carpetas para listar sus paquetes con Pi. Se usa el proveedor y modelo de Configuración IA; se envían solo metadatos de dependencias. Por ahora se admiten proyectos Node.</p> : null}
+        {pending ? <p className="project-empty">{progress}</p> : null}
         {project && !pending ? <p className="project-summary"><strong>{project.name}</strong><span> · {project.dependencies.length} dependencias directas</span></p> : null}
       </div>
       {projects.length > 0 && (

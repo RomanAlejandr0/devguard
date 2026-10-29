@@ -19,7 +19,10 @@ use tauri::{Emitter, Manager};
 const LINE_LIMIT: usize = 2 * 1024 * 1024;
 const METHODS: &[&str] = &[
     "catalog",
+    "skill_read",
     "analyze",
+    "analyze_project",
+    "configure",
     "cancel",
     "auth_set",
     "auth_check",
@@ -31,6 +34,7 @@ const METHODS: &[&str] = &[
 const TOOLS: &[&str] = &[
     "detect_tools",
     "collect_inventory",
+    "read_package_files",
 ];
 type Reply = Result<Value, String>;
 type Pending = Arc<Mutex<HashMap<String, mpsc::Sender<Reply>>>>;
@@ -282,14 +286,14 @@ impl PiState {
             }
             return Err(error);
         }
-        let timeout = if method == "analyze" { 300 } else { 180 };
+        let timeout = if matches!(method, "analyze" | "analyze_project") { 300 } else { 180 };
         match receiver.recv_timeout(Duration::from_secs(timeout)) {
             Ok(result) => result,
             Err(_) => {
                 if let Ok(mut pending) = pending.lock() {
                     pending.remove(&id);
                 }
-                if method == "analyze" {
+                if matches!(method, "analyze" | "analyze_project") {
                     let cancel_id = format!(
                         "timeout-{}",
                         self.inner.sequence.fetch_add(1, Ordering::Relaxed)
@@ -417,7 +421,6 @@ fn fail_pending(pending: &Pending, message: &str) {
     }
 }
 
-#[cfg(test)]
 fn selected_project(selected: &Mutex<Option<PathBuf>>) -> Result<PathBuf, String> {
     let path = selected
         .lock()
@@ -434,12 +437,13 @@ fn selected_project(selected: &Mutex<Option<PathBuf>>) -> Result<PathBuf, String
     }
     Ok(canonical)
 }
-fn dispatch_tool(tool: &str, _selected: &Mutex<Option<PathBuf>>) -> Reply {
+fn dispatch_tool(tool: &str, selected: &Mutex<Option<PathBuf>>) -> Reply {
     match tool {
         "detect_tools" => serde_json::to_value(crate::detection::detect_tools())
             .map_err(|_| "No se pudo preparar la detección local.".into()),
         "collect_inventory" => serde_json::to_value(crate::inventory::collect_inventory())
             .map_err(|_| "No se pudo preparar el inventario local.".into()),
+        "read_package_files" => crate::project::package_files(&selected_project(selected)?),
         _ => Err("Herramienta no autorizada.".into()),
     }
 }

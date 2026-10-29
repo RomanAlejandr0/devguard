@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { readFile, readdir, mkdir, chmod, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -8,6 +9,7 @@ import { createAgentSession, ModelRuntime, SessionManager, SettingsManager, crea
 import { Type } from 'typebox';
 import { readers } from './tools/registry.mjs';
 import { validateReport } from './report.mjs';
+import { validateProjectPackages } from './project-packages.mjs';
 const { AuthStorage } = await import(new URL('./core/auth-storage.js', import.meta.resolve('@earendil-works/pi-coding-agent')));
 const root = dirname(fileURLToPath(import.meta.url));
 const dataDir = process.env.DEVGUARD_PI_DIR;
@@ -19,6 +21,8 @@ async function installationId() {
  try {const id=(await readFile(path,'utf8')).trim();if(!/^[0-9a-f-]{36}$/i.test(id))throw Error('Identificador inválido');return id;}
  catch(error){if(error.code!=='ENOENT')throw error;const id=randomUUID();try{await writeFile(path,id,{flag:'wx',mode:0o600});return id;}catch(error){if(error.code==='EEXIST')return installationId();throw error;}}
 }
+let selection=null;
+try {selection=JSON.parse(readFileSync(join(dataDir,'selection.json'),'utf8'));}catch{}
 let runtime;
 async function models() { return runtime ??= await ModelRuntime.create({credentials:auth,modelsPath:null,modelsStorePath:join(dataDir,'models-cache.json'),refreshOnCreate:false,allowModelNetwork:false}); }
 const send = frame => process.stdout.write(JSON.stringify(frame)+'\n');
@@ -38,7 +42,7 @@ async function skills() {
  const result=[];for(const e of entries){if(!e.isDirectory()|| !/^[a-z-]+$/.test(e.name)|| !readers[e.name])continue;const text=await readFile(join(root,'skills',e.name,'SKILL.md'),'utf8');result.push({id:e.name,name:e.name,description:readers[e.name].description,text});}return result;
 }
 function publicSkills(list){return list.map(({text,...rest})=>rest);}
-async function catalog(){const r=await models();const creds=await auth.list();return {providers:r.getProviders().map(p=>({id:p.id,name:p.name??p.id,authenticated:creds.some(c=>c.providerId===p.id),credentialType:creds.find(c=>c.providerId===p.id)?.type??null,methods:[...(p.auth?.apiKey?['api_key']:[]),...(p.auth?.oauth?[p.auth.oauth.isSubscription?'oauth_subscription':'oauth']:[])]})),models:r.getModels().map(m=>({id:m.id,name:m.name??m.id,provider:m.provider})),skills:publicSkills(await skills())};}
+async function catalog(){const r=await models();const creds=await auth.list();return {providers:r.getProviders().map(p=>({id:p.id,name:p.name??p.id,authenticated:creds.some(c=>c.providerId===p.id),credentialType:creds.find(c=>c.providerId===p.id)?.type??null,methods:[...(p.auth?.apiKey?['api_key']:[]),...(p.auth?.oauth?[p.auth.oauth.isSubscription?'oauth_subscription':'oauth']:[])]})),models:r.getModels().map(m=>({id:m.id,name:m.name??m.id,provider:m.provider})),skills:publicSkills(await skills()),selection};}
 const reportSchema=Type.Object({summary:Type.String(),findings:Type.Array(Type.Object({name:Type.String(),category:Type.String(),source:Type.String(),evidence:Type.String(),limitations:Type.Array(Type.String())})),limitations:Type.Array(Type.String())});
 function result(value){return {content:[{type:'text',text:JSON.stringify(value)}],details:value};}
 function emptyResources(prompt) { return {getExtensions:()=>({extensions:[],errors:[],runtime:createExtensionRuntime()}),getSkills:()=>({skills:[],diagnostics:[]}),getPrompts:()=>({prompts:[],diagnostics:[]}),getThemes:()=>({themes:[],diagnostics:[]}),getAgentsFiles:()=>({agentsFiles:[]}),getSystemPrompt:()=>prompt,getSystemPromptSource:()=>undefined,getAppendSystemPrompt:()=>[],getAppendSystemPromptSources:()=>[],extendResources:()=>{},reload:async()=>{}}; }
@@ -83,8 +87,40 @@ async function checkConnection(params) {
   return {verified:true};
  }finally{clearTimeout(timeout);session?.dispose();session=undefined;if(operation===controller)operation=undefined;}
 }
+async function analyzeProject() {
+ if(operation)throw Error('Ya hay una operación en curso');
+ const controller=new AbortController();operation=controller;let input,report;
+ try {
+  const r=await models();
+  const model=selection&&r.getModel(selection.provider,selection.model);
+  if(!model)throw Error('Configura proveedor y modelo antes de analizar proyectos');
+  const skill=await readFile(join(root,'skills/project-packages/SKILL.md'),'utf8');
+  const tools=[
+   {name:'read_package_files',label:'Leer metadatos del proyecto',description:'Leer package.json y metadatos de package-lock.json de la carpeta elegida. No recibe rutas.',parameters:Type.Object({}),async execute(_id,_args,signal){progress('Pi está leyendo los paquetes del proyecto');input=await bridge('read_package_files',{},signal);return result(input);}},
+   {name:'submit_packages',label:'Listar paquetes',description:'Entregar todos los paquetes directos para la tabla de Proyectos.',parameters:Type.Object({dependencies:Type.Array(Type.Object({name:Type.String(),kind:Type.Union(['production','development','optional','peer'].map(v=>Type.Literal(v))),declared:Type.String(),resolved:Type.Union([Type.String(),Type.Null()])}))}),async execute(_id,args){if(!input)throw Error('Consulta primero read_package_files');report=validateProjectPackages(args,input);return result({accepted:true});}}
+  ];
+  if(controller.signal.aborted)throw Error('Cancelado');
+  progress('Iniciando el análisis de paquetes con Pi');
+  ({session}=await createAgentSession({cwd:dataDir,agentDir:dataDir,modelRuntime:r,model,thinkingLevel:'off',resourceLoader:emptyResources(skill),tools:tools.map(t=>t.name),customTools:tools,sessionManager:SessionManager.inMemory(dataDir),settingsManager:SettingsManager.inMemory({compaction:{enabled:false},retry:{enabled:false},cacheWarming:{enabled:false}})}));
+  if(controller.signal.aborted)throw Error('Cancelado');
+  if(session.getActiveToolNames().some(n=>!tools.some(t=>t.name===n)))throw Error('Herramientas no autorizadas');
+  controller.signal.addEventListener('abort',()=>void session?.abort(),{once:true});
+  await session.prompt('Lee los metadatos del proyecto y devuelve la lista completa de paquetes y versiones mediante submit_packages.');
+  if(controller.signal.aborted||!report)throw Error('No se obtuvo una lista válida');
+  progress('Lista de paquetes completada por Pi');return report;
+ }finally{session?.dispose();session=undefined;if(operation===controller)operation=undefined;}
+}
 async function method(name,p={}) {
  if(name==='catalog')return catalog();
+ if(name==='skill_read'){
+  if(p.id!=='project-packages'&&!Object.hasOwn(readers,p.id))throw Error('Skill no permitida');
+  return {id:p.id,instructions:await readFile(join(root,'skills',p.id,'SKILL.md'),'utf8')};
+ }
+ if(name==='configure'){
+  const r=await models();if(!r.getModel(p.provider,p.model))throw Error('Modelo no disponible');
+  selection={provider:p.provider,model:p.model};writeFileSync(join(dataDir,'selection.json'),JSON.stringify(selection),{mode:0o600});return {saved:true};
+ }
+ if(name==='analyze_project')return analyzeProject();
  if(name==='analyze')return analyze(p);
  if(name==='auth_check')return checkConnection(p);
  if(name==='cancel'){operation?.abort();await session?.abort();inputPrompt?.reject(Error('Cancelado'));inputPrompt=undefined;return {cancelled:true};}

@@ -46,9 +46,9 @@ El detector solo admite las tres consultas previstas. La interfaz no recibe una 
 
 ## Proyectos locales
 
-La pestaña **Proyectos** permite agregar varias carpetas Node y alternar entre sus dependencias. Agregar de nuevo la misma carpeta actualiza su informe sin duplicarla. **Quitar de la lista** no borra archivos. La lista y los informes se conservan durante la sesión de la aplicación.
+La pestaña **Proyectos** usa Pi para listar los paquetes de varias carpetas Node, conservando la tabla de dependencias y versiones. Selecciona primero proveedor y modelo en **Configuración IA**; quedan guardados para los siguientes análisis. Agregar de nuevo la misma carpeta actualiza su informe sin duplicarla. **Quitar de la lista** no borra archivos. La lista y los informes se conservan durante la sesión de la aplicación.
 
-La lectura local usa `package.json` y, cuando existe, `package-lock.json`. No ejecuta scripts ni instala paquetes. Los proyectos no se incluyen en las herramientas ni en las skills del agente IA.
+El agente usa una herramienta Rust limitada a metadatos de `package.json` y `package-lock.json`; no recibe scripts ni código del proyecto. Pi genera la lista y una validación local exige que coincidan nombres, tipos, declaraciones y versiones resueltas, sin omisiones ni paquetes inventados. Si falta la conexión o falla el análisis, se informa del error; no hay sustitución silenciosa por el parser tradicional. Se puede cancelar. No se buscan secretos, aplicaciones ni vulnerabilidades.
 
 Se verificó la lectura del proyecto de prueba original en el Escritorio, sin cambiar permisos de macOS. El estado inicial del botón del selector puede aparecer desactivado en la lectura de accesibilidad antes de que termine de actualizarse; no se confirmó un bloqueo persistente del Escritorio.
 
@@ -86,3 +86,7 @@ Las credenciales quedan en el directorio de datos de la aplicación, subcarpeta 
 El inventario de Python corresponde al intérprete accesible y el de npm a paquetes globales. Cancelar detiene la inferencia; una consulta local ya iniciada puede terminar dentro de su límite de tiempo.
 
 Referencias oficiales: [Pi SDK](https://pi.dev/docs/latest/sdk), [proveedores y autenticación](https://pi.dev/docs/latest/providers). La integración toma las firmas de las declaraciones y del ejemplo `examples/sdk/12-full-control.ts` incluidos en el paquete fijado.
+
+El flujo de Proyectos utiliza la skill `agent/skills/project-packages/SKILL.md` y devuelve el mismo contrato de la tabla. Los lectores locales siguen siendo necesarios para acceder a archivos; el modelo no tiene terminal ni acceso libre al equipo. El inventario de Mi Mac mantiene su detección tradicional.
+
+Cada skill se puede consultar en modo de solo lectura mediante **Ver instrucciones** en el lugar donde se utiliza: en Proyectos para `project-packages` y junto a cada skill de Agente IA para `tools` y `packages`. La vista carga el archivo incluido en la aplicación y no ofrece edición ni acceso a rutas arbitrarias.
