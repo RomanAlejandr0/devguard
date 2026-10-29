@@ -16,6 +16,18 @@ type ProjectReport = {
   warnings: string[];
   dependencies: Dependency[];
 };
+type Vulnerability = {
+  id: string;
+  aliases: string[];
+  summary: string | null;
+  severity: string | null;
+  cvss: string | null;
+  fixedIn: string[];
+  url: string;
+};
+type PackageFinding = { ecosystem: string; name: string; version: string; vulnerabilities: Vulnerability[] };
+type VulnerabilityReport = { source: string; checked: number; findings: PackageFinding[]; warnings: string[] };
+const severityLabels: Record<string, string> = { CRITICAL: "Crítica", HIGH: "Alta", MODERATE: "Media", MEDIUM: "Media", LOW: "Baja" };
 const kindLabels = {
   production: "Producción",
   development: "Desarrollo",
@@ -31,6 +43,10 @@ export default function ProjectInventory() {
   const [error, setError] = useState<string | null>(null);
   const inFlight = useRef(false);
   const cancelled = useRef(false);
+  const [vulnerabilities, setVulnerabilities] = useState<Record<string, VulnerabilityReport>>({});
+  const [checking, setChecking] = useState(false);
+  const [checkError, setCheckError] = useState<string | null>(null);
+  const checkingRef = useRef(false);
   const [progress,setProgress] = useState("");
   useEffect(() => {
     if (!isTauri()) return;
@@ -77,7 +93,35 @@ export default function ProjectInventory() {
     }
   }
 
+  async function checkVulnerabilities(target: ProjectReport) {
+    if (checkingRef.current) return;
+    setCheckError(null);
+    if (!isTauri()) {
+      setCheckError("Abre DevGuard como aplicación de escritorio para consultar OSV.");
+      return;
+    }
+    const packages = target.dependencies
+      .filter((dependency) => dependency.resolved)
+      .map((dependency) => ({ ecosystem: "npm", name: dependency.name, version: dependency.resolved }));
+    if (!packages.length) {
+      setCheckError("Ningún paquete tiene versión resuelta; OSV necesita una versión exacta.");
+      return;
+    }
+    checkingRef.current = true;
+    setChecking(true);
+    try {
+      const report = await invoke<VulnerabilityReport>("check_vulnerabilities", { packages });
+      setVulnerabilities((current) => ({ ...current, [target.path]: report }));
+    } catch (reason) {
+      setCheckError(typeof reason === "string" ? reason : "No se pudo consultar OSV.");
+    } finally {
+      checkingRef.current = false;
+      setChecking(false);
+    }
+  }
+
   function removeProject(path: string) {
+    setVulnerabilities(({ [path]: _removed, ...rest }) => rest);
     const remaining = projects.filter((entry) => entry.path !== path);
     setProjects(remaining);
     if (selectedPath === path) setSelectedPath(remaining[0]?.path ?? null);
@@ -123,11 +167,19 @@ export default function ProjectInventory() {
             <button className="project-remove" type="button" disabled={pending} onClick={() => removeProject(project.path)}>Quitar de la lista</button>
           </div>
           <p className="project-path">{project.path}</p>
+          <div className="vuln-actions">
+            <button className="project-button" type="button" disabled={checking || pending} onClick={() => void checkVulnerabilities(project)}>
+              {checking ? "Consultando OSV…" : vulnerabilities[project.path] ? "Volver a consultar OSV" : "Buscar vulnerabilidades (OSV)"}
+            </button>
+            <p className="vuln-note">Envía a api.osv.dev solo el nombre y la versión resuelta de cada paquete directo. No se envían rutas, código ni claves, y no interviene ninguna IA.</p>
+          </div>
+          {checkError ? <p className="project-error" role="alert">{checkError}</p> : null}
+          <VulnerabilityResults report={vulnerabilities[project.path]} />
           {project.warnings.length ? <ul className="project-warnings">{project.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul> : null}
           {project.dependencies.length ? (
             <div className="dependency-scroll" tabIndex={0} role="region" aria-label="Dependencias del proyecto">
               <table className="dependency-table">
-                <caption>{project.lockfile ? `La versión resuelta proviene de ${project.lockfile}.` : "Solo se muestran las versiones declaradas."} No comprueba su instalación ni vulnerabilidades.</caption>
+                <caption>{project.lockfile ? `La versión resuelta proviene de ${project.lockfile}.` : "Solo se muestran las versiones declaradas."} No comprueba su instalación.</caption>
                 <thead><tr><th scope="col">Paquete</th><th scope="col">Tipo</th><th scope="col">Declarada</th><th scope="col">Resuelta</th></tr></thead>
                 <tbody>{project.dependencies.map((dependency) => <tr key={`${dependency.kind}:${dependency.name}`}><th scope="row">{dependency.name}</th><td>{kindLabels[dependency.kind]}</td><td><code>{dependency.declared}</code></td><td><code>{dependency.resolved ?? "Sin resolver"}</code></td></tr>)}</tbody>
               </table>
@@ -136,5 +188,35 @@ export default function ProjectInventory() {
         </div>
       ) : null}
     </section>
+  );
+}
+
+function VulnerabilityResults({ report }: { report?: VulnerabilityReport }) {
+  if (!report) return null;
+  const total = report.findings.reduce((sum, finding) => sum + finding.vulnerabilities.length, 0);
+  return (
+    <div className="vuln-report" aria-live="polite">
+      <p className="project-summary">
+        <strong>{total ? `${total} aviso(s) en ${report.findings.length} paquete(s)` : "Sin avisos conocidos en OSV"}</strong>
+        <span> · {report.checked} paquetes consultados</span>
+      </p>
+      {!total ? <p className="project-empty">Que OSV no devuelva avisos no significa que el proyecto sea seguro: solo cubre vulnerabilidades ya publicadas y las versiones consultadas.</p> : null}
+      {report.warnings.length ? <ul className="project-warnings">{report.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul> : null}
+      {report.findings.map((finding) => (
+        <article className="vuln-package" key={`${finding.ecosystem}:${finding.name}@${finding.version}`}>
+          <h4>{finding.name} <code>{finding.version}</code></h4>
+          <ul>
+            {finding.vulnerabilities.map((vulnerability) => (
+              <li key={vulnerability.id}>
+                <a href={vulnerability.url} target="_blank" rel="noreferrer noopener">{vulnerability.id}</a>
+                {vulnerability.severity ? <span className={`vuln-severity sev-${vulnerability.severity.toLowerCase()}`}>{severityLabels[vulnerability.severity] ?? vulnerability.severity}</span> : null}
+                {vulnerability.summary ? <span> · {vulnerability.summary}</span> : null}
+                {vulnerability.fixedIn.length ? <span className="vuln-fixed"> · Corregida en {vulnerability.fixedIn.join(", ")}</span> : null}
+              </li>
+            ))}
+          </ul>
+        </article>
+      ))}
+    </div>
   );
 }

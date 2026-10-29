@@ -7,7 +7,7 @@ Primer prototipo de una aplicación local para macOS que detecta **Node.js, Pyth
 - Detección manual con un botón, sin modificar las herramientas detectadas.
 - Consultas locales y acotadas a ejecutables accesibles o ubicaciones habituales.
 - Estados distintos para detectada, no encontrada y error de detección.
-- Escaneo tradicional sin cuenta; análisis con IA opcional mediante Pi. Sin consultas de vulnerabilidades, actualizaciones automáticas ni telemetría.
+- Escaneo tradicional sin cuenta; análisis con IA opcional mediante Pi. Consulta de vulnerabilidades en OSV solo cuando la pides, sin actualizaciones automáticas ni telemetría.
 
 Una herramienta detectada **no significa** que sea segura o esté actualizada. Tampoco se garantiza encontrar todas las instalaciones de nvm, pyenv u otros gestores. La aplicación no carga perfiles de shell ni instala herramientas. En macOS omite el lanzador `/usr/bin/python3` para evitar que una consulta dispare un instalador; sí consulta el ejecutable directo de Python incluido en Xcode o Command Line Tools cuando existe. El inventario de Python corresponde al intérprete accesible; no recorre entornos virtuales.
 
@@ -48,9 +48,15 @@ El detector solo admite las tres consultas previstas. La interfaz no recibe una 
 
 La pestaña **Proyectos** usa Pi para listar los paquetes de varias carpetas Node, conservando la tabla de dependencias y versiones. Selecciona primero proveedor y modelo en **Configuración IA**; quedan guardados para los siguientes análisis. Agregar de nuevo la misma carpeta actualiza su informe sin duplicarla. **Quitar de la lista** no borra archivos. La lista y los informes se conservan durante la sesión de la aplicación.
 
-El agente usa una herramienta Rust limitada a metadatos de `package.json` y `package-lock.json`; no recibe scripts ni código del proyecto. Pi genera la lista y una validación local exige que coincidan nombres, tipos, declaraciones y versiones resueltas, sin omisiones ni paquetes inventados. Si falta la conexión o falla el análisis, se informa del error; no hay sustitución silenciosa por el parser tradicional. Se puede cancelar. No se buscan secretos, aplicaciones ni vulnerabilidades.
+El agente usa una herramienta Rust limitada a metadatos de `package.json` y `package-lock.json`; no recibe scripts ni código del proyecto. Pi genera la lista y una validación local exige que coincidan nombres, tipos, declaraciones y versiones resueltas, sin omisiones ni paquetes inventados. Si falta la conexión o falla el análisis, se informa del error; no hay sustitución silenciosa por el parser tradicional. Se puede cancelar. No se buscan secretos ni aplicaciones. Las vulnerabilidades no las busca la IA; ver la sección siguiente.
 
 Se verificó la lectura del proyecto de prueba original en el Escritorio, sin cambiar permisos de macOS. El estado inicial del botón del selector puede aparecer desactivado en la lectura de accesibilidad antes de que termine de actualizarse; no se confirmó un bloqueo persistente del Escritorio.
+
+## Vulnerabilidades (OSV)
+
+En **Proyectos**, el botón **Buscar vulnerabilidades (OSV)** consulta la base pública [OSV](https://osv.dev) para los paquetes directos con versión resuelta. Es una acción explícita y determinista: Rust envía a `api.osv.dev` únicamente ecosistema, nombre y versión de cada paquete (no rutas, código ni claves) y ninguna IA interviene. El módulo `src-tauri/src/osv.rs` no depende de cómo se obtuvo la lista de paquetes.
+
+Limitaciones: solo se consultan paquetes directos (no transitivos) con versión resuelta; los resultados cubren avisos ya publicados; la severidad es la etiqueta de la fuente, sin cálculo propio de CVSS; si OSV no devuelve avisos, eso no garantiza que el proyecto sea seguro. Los avisos retirados se omiten y los fallos de consulta se informan sin mostrarse como «sin vulnerabilidades».
 
 ## Paquetes de Mi Mac
 
