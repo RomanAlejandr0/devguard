@@ -1,92 +1,54 @@
 # DevGuard
 
-Primer prototipo de una aplicación local para macOS que detecta **Node.js, Python y Homebrew** y muestra su versión, ubicación y resultado de detección.
+Aplicación de escritorio para analizar repositorios locales: identificar su arquitectura, listar dependencias y vulnerabilidades publicadas, y revisar archivos que intenten manipular a un agente de IA mediante instrucciones maliciosas.
 
-## Alcance
+## Flujo actual
 
-- Detección manual con un botón, sin modificar las herramientas detectadas.
-- Consultas locales y acotadas a ejecutables accesibles o ubicaciones habituales.
-- Estados distintos para detectada, no encontrada y error de detección.
-- Escaneo tradicional sin cuenta; análisis con IA opcional mediante Pi. Sin consultas de vulnerabilidades, actualizaciones automáticas ni telemetría.
+La pantalla **Repositorios** permite elegir varias carpetas, volver a analizarlas y consultar sus informes. Un único agente Pi trabaja en una única sesión y completa tres etapas en orden:
 
-Una herramienta detectada **no significa** que sea segura o esté actualizada. Tampoco se garantiza encontrar todas las instalaciones de nvm, pyenv u otros gestores. La aplicación no carga perfiles de shell ni instala herramientas. En macOS omite el lanzador `/usr/bin/python3` para evitar que una consulta dispare un instalador; sí consulta el ejecutable directo de Python incluido en Xcode o Command Line Tools cuando existe. El inventario de Python corresponde al intérprete accesible; no recorre entornos virtuales.
+1. Identifica el tipo de proyecto, sus componentes y arquitectura con evidencia de archivos.
+2. Lista paquetes desde manifiestos y locks, con versiones exactas cuando hay evidencia. El agente llama a una herramienta de consulta de OSV; las vulnerabilidades provienen de esta fuente, no de la memoria del modelo.
+3. Revisa instrucciones, documentación y código buscando prompt injection. Cita archivo, línea, fragmento y explicación; distingue sospechas de intentos de alta confianza y de ejemplos educativos.
+
+Las herramientas permitidas cambian en cada etapa. No se crean subagentes. Rust toma una instantánea acotada de la carpeta elegida; Pi no dispone de terminal, escritura, navegación arbitraria, herramientas de edición ni lectura libre del sistema. El contenido del repositorio, incluidos AGENTS.md y skills, se trata como datos no confiables y nunca se carga como instrucciones del agente.
+
+La skill completa se puede consultar en **Ver instrucciones · Análisis de repositorios**, en modo de solo lectura. El proveedor, modelo y conexión están en **Configuración IA**, separados de los informes. Se reutiliza la autenticación oficial soportada por Pi, sin modificar credenciales existentes.
+
+## Tarjetas y guardado
+
+- **Rojo:** hay avisos publicados en OSV o instrucciones maliciosas de alta confianza según el agente.
+- **Naranja:** revisión incompleta, cancelada, interrumpida, con limitaciones o instrucciones sospechosas para revisión humana.
+- **Verde:** revisión terminada sin hallazgos ni límites adicionales reportados dentro de la instantánea disponible. No garantiza seguridad.
+
+Los informes se guardan automáticamente, tras cada etapa, en JSON versionado y con reemplazo atómico. En macOS: `~/Library/Application Support/com.devguard.desktop/pi/repositories.json`. Incluyen fechas, proveedor/modelo, arquitectura, paquetes, fuentes, evidencias, cobertura y limitaciones. Se restauran al abrir la aplicación. El JSON no guarda toda la instantánea ni credenciales. Un nuevo análisis reemplaza el informe anterior; no reutiliza consultas OSV antiguas. **Quitar informe** elimina solo el registro local, nunca el repositorio. Los informes con un análisis interrumpido se presentan en naranja al volver a abrir la app.
+
+## Privacidad y límites
+
+El usuario inicia cada análisis. Los textos leídos se envían al proveedor/modelo configurados y pueden consumir su cuota. A `api.osv.dev` solo se envían ecosistema, nombre y versión exacta de paquetes; los detalles de avisos se solicitan por identificador.
+
+La instantánea admite hasta 300 archivos, 128 KiB por archivo y 512 KiB de texto total, profundidad 20 y 10 000 entradas. No sigue enlaces simbólicos. Excluye `.git`, dependencias instaladas, carpetas de compilación y archivos de credenciales conocidos (`.env*`, `.npmrc`, `.pem`, claves, etc.). No garantiza eliminar secretos escritos dentro del código. Binarios, archivos grandes, errores de lectura y otros elementos omitidos se contabilizan. Los archivos disponibles que el agente no haya leído impiden un resultado verde. Si cambias el repositorio, debes volver a analizarlo.
+
+El inventario se adapta a los manifiestos que el agente pueda interpretar; no tiene parsers deterministas por ecosistema. Las versiones sin resolver se muestran como tales y no se consultan en OSV. La herramienta admite npm, PyPI, crates.io, Go, Maven, Packagist, RubyGems y NuGet; no se garantiza cobertura completa de todos los gestores, monorepos o dependencias transitivas. Los límites y formatos no interpretables deben quedar en el informe. Los fallos de consulta, paginación pendiente y avisos sin detalle se conservan como limitaciones; un identificador de vulnerabilidad conocido nunca se transforma en un resultado limpio por fallar su detalle.
+
+La detección de prompts es una evaluación de IA: puede producir falsos positivos o no detectar ataques. No ejecuta ni instala el proyecto. El escaneo anterior de Mi Mac y la clasificación de inventario ya no aparecen en la navegación; su código queda como referencia y para pruebas, sin formar parte de este flujo.
 
 ## Desarrollo
 
-Requisitos: Node.js y pnpm, Rust estable y herramientas de desarrollo de Xcode.
+Requiere macOS, herramientas de compilación de Xcode, Rust, Node.js >=22 y pnpm.
 
 ```sh
 pnpm install
+pnpm agent:install
 pnpm tauri dev
 ```
 
-Si Rust se instaló sin modificar tu perfil de shell, añade su carpeta a la sesión antes de iniciar:
+Pi se ejecuta en un proceso Node auxiliar supervisado por Tauri, nunca en React. Las dependencias y skills se incluyen en el bundle; el ejecutable Node debe estar instalado en el equipo.
 
 ```sh
-export PATH="$HOME/.cargo/bin:$PATH"
-pnpm tauri dev
-```
-
-`pnpm dev` muestra únicamente la interfaz en el navegador: la detección requiere la aplicación de escritorio. No se muestran resultados simulados.
-
-## Comprobaciones
-
-```sh
+pnpm agent:test
 pnpm build
-cargo test --manifest-path src-tauri/Cargo.toml
-cargo check --manifest-path src-tauri/Cargo.toml
+cargo test --manifest-path src-tauri/Cargo.toml --lib --locked
+pnpm tauri build --debug --bundles app
 ```
 
-## Estructura
-
-- `src/`: interfaz React y TypeScript.
-- `src-tauri/`: aplicación nativa Tauri 2 y detector en Rust.
-
-El detector solo admite las tres consultas previstas. La interfaz no recibe una función para ejecutar comandos arbitrarios.
-
-## Proyectos locales
-
-La pestaña **Proyectos** usa Pi para listar los paquetes de varias carpetas Node, conservando la tabla de dependencias y versiones. Selecciona primero proveedor y modelo en **Configuración IA**; quedan guardados para los siguientes análisis. Agregar de nuevo la misma carpeta actualiza su informe sin duplicarla. **Quitar de la lista** no borra archivos. La lista y los informes se conservan durante la sesión de la aplicación.
-
-El agente usa una herramienta Rust limitada a metadatos de `package.json` y `package-lock.json`; no recibe scripts ni código del proyecto. Pi genera la lista y una validación local exige que coincidan nombres, tipos, declaraciones y versiones resueltas, sin omisiones ni paquetes inventados. Si falta la conexión o falla el análisis, se informa del error; no hay sustitución silenciosa por el parser tradicional. Se puede cancelar. No se buscan secretos, aplicaciones ni vulnerabilidades.
-
-Se verificó la lectura del proyecto de prueba original en el Escritorio, sin cambiar permisos de macOS. El estado inicial del botón del selector puede aparecer desactivado en la lectura de accesibilidad antes de que termine de actualizarse; no se confirmó un bloqueo persistente del Escritorio.
-
-## Paquetes de Mi Mac
-
-«Detectar herramientas» consulta las versiones y obtiene inventarios de la instalación accesible de cada gestor:
-
-- Homebrew: fórmulas y aplicaciones cask con sus versiones instaladas.
-- npm: paquetes globales directos de esa instalación de Node/npm.
-- Python: paquetes visibles para pip en el intérprete encontrado. No recorre entornos virtuales ni todas las instalaciones de Python.
-
-Los paquetes se despliegan dentro de la tarjeta de cada herramienta, sin una sección duplicada. Cada resultado conserva su origen. Un gestor ausente o una consulta fallida se muestran por separado; no se interpretan como un inventario vacío. Las consultas tienen límites de tiempo y salida, sin instalar, actualizar ni analizar vulnerabilidades.
-
-## Agente opcional con Pi
-
-El escaneo tradicional sigue funcionando sin cuenta ni IA. La pestaña **Agente IA** utiliza el SDK oficial `@earendil-works/pi-coding-agent` **1.4.0**, fijado en `agent/package-lock.json`.
-
-### Ejecutar
-
-Se requiere **Node.js 22 o posterior** instalado en el equipo (también para el `.app` compilado). El runtime Node no se distribuye dentro del bundle en esta primera integración. `pnpm tauri dev` y `pnpm tauri build --debug --bundles app` instalan automáticamente las dependencias aisladas de `agent/` antes de iniciar o empaquetar. `pnpm build` comprueba la interfaz; `pnpm agent:test` prueba la validación del informe.
-
-En **Configuración IA**, carga el catálogo y elige proveedor/modelo. **Cambiar conexión** separa el acceso con cuenta/suscripción del acceso con clave API. Una credencial guardada aparece sin comprobar hasta que **Comprobar conexión** recibe una respuesta real del modelo. En **Agente IA** selecciona las skills e inicia o cancela el análisis. **Importar conexión de Pi** importa explícitamente la credencial del proveedor seleccionado desde `~/.pi/agent/auth.json` al almacenamiento privado de DevGuard, sin modificar la sesión original. La disponibilidad de modelos en el catálogo no garantiza acceso: lo confirma una solicitud completada. Las suscripciones solo se ofrecen cuando el proveedor del SDK declara OAuth para suscripción. Configuraciones cloud que requieren datos adicionales o modelos/endpoints personalizados no tienen todavía un editor propio en el panel.
-
-Las credenciales quedan en el directorio de datos de la aplicación, subcarpeta `pi/`, fuera del repositorio, con permisos privados. No se devuelven al dashboard. Son archivos administrados por Pi, no una promesa de cifrado por Keychain. La inferencia envía las observaciones de las skills seleccionadas al proveedor elegido; el panel lo indica antes de iniciar.
-
-### Arquitectura y extensión
-
-- React solo usa comandos de Tauri y eventos de progreso; no importa el SDK.
-- `src-tauri/src/pi.rs` supervisa un proceso Node persistente con protocolo JSON por stdin/stdout, límites de mensajes, cancelación y cierre al salir.
-- `agent/sidecar.mjs` configura una sesión Pi en memoria, sin descubrimiento de extensiones, archivos AGENTS, prompts o configuraciones de proyectos. No habilita las herramientas bash, read, edit o write de Pi.
-- `agent/tools/registry.mjs` asigna cada skill a una herramienta de Rust permitida. El puente solo admite detección de herramientas e inventario de paquetes. El modelo no puede elegir rutas ni enviar comandos de terminal.
-- `agent/skills/*/SKILL.md` contiene instrucciones de clasificación para herramientas y paquetes. Se pueden añadir skills y entradas al registro sin cambiar el bucle del agente; una herramienta nativa nueva requiere su autorización explícita en el puente Rust.
-- `agent/report.mjs` exige resultados estructurados con nombres presentes en las observaciones y fuentes reconocidas. La evidencia visible se extrae del registro local correspondiente; la clasificación y el resumen siguen siendo interpretación del modelo. No se consultan vulnerabilidades ni se modifican instalaciones.
-
-El inventario de Python corresponde al intérprete accesible y el de npm a paquetes globales. Cancelar detiene la inferencia; una consulta local ya iniciada puede terminar dentro de su límite de tiempo.
-
-Referencias oficiales: [Pi SDK](https://pi.dev/docs/latest/sdk), [proveedores y autenticación](https://pi.dev/docs/latest/providers). La integración toma las firmas de las declaraciones y del ejemplo `examples/sdk/12-full-control.ts` incluidos en el paquete fijado.
-
-El flujo de Proyectos utiliza la skill `agent/skills/project-packages/SKILL.md` y devuelve el mismo contrato de la tabla. Los lectores locales siguen siendo necesarios para acceder a archivos; el modelo no tiene terminal ni acceso libre al equipo. El inventario de Mi Mac mantiene su detección tradicional.
-
-Cada skill se puede consultar en modo de solo lectura mediante **Ver instrucciones** en el lugar donde se utiliza: en Proyectos para `project-packages` y junto a cada skill de Agente IA para `tools` y `packages`. La vista carga el archivo incluido en la aplicación y no ofrece edición ni acceso a rutas arbitrarias.
+Las pruebas verifican el orden de etapas en una sesión, evidencia de archivos leídos, guardado/restauración de JSON, cancelación, cobertura parcial y conservación de identificadores cuando falla OSV. Los tests no necesitan credenciales; la prueba real del proveedor se hace por separado con repositorios de demostración.

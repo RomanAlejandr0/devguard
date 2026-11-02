@@ -40,7 +40,11 @@
       "../agent/tools/": "agent/tools/",
       "../agent/skills/": "agent/skills/",
       "../agent/report.mjs": "agent/report.mjs",
-      "../agent/project-packages.mjs": "agent/project-packages.mjs"
+      "../agent/project-packages.mjs": "agent/project-packages.mjs",
+      "../agent/repository-analysis.mjs": "agent/repository-analysis.mjs",
+      "../agent/repository-report.mjs": "agent/repository-report.mjs",
+      "../agent/repository-store.mjs": "agent/repository-store.mjs",
+      "../agent/osv.mjs": "agent/osv.mjs"
     }
   }
 }

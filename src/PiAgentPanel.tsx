@@ -142,7 +142,7 @@ export default function PiAgentPanel({ view, onOpenSettings }: Props) {
     if (!catalog || !providerId || !modelId || !isTauri()) return;
     let current = true;
     void request("configure", {provider:providerId,model:modelId}).catch(() => {
-      if (current) setError("No se pudo guardar el proveedor y modelo para Proyectos. Vuelve a seleccionarlos.");
+      if (current) setError("No se pudo guardar el proveedor y modelo para repositorios. Vuelve a seleccionarlos.");
     });
     return () => {current=false;};
   }, [catalog,providerId,modelId]);
@@ -355,11 +355,7 @@ export default function PiAgentPanel({ view, onOpenSettings }: Props) {
       <div className="pi-heading">
         <div>
           <h1 id={`${ids}-title`}>{view === "settings" ? "Configuración IA" : "Agente IA"}</h1>
-          <p>
-            {view === "settings"
-              ? "Elige el proveedor, el modelo y su conexión."
-              : "Analiza el inventario y consulta los resultados del agente."}
-          </p>
+
         </div>
         <button
           className="pi-button"
@@ -370,7 +366,7 @@ export default function PiAgentPanel({ view, onOpenSettings }: Props) {
           {view !== "settings" ? "Configurar IA" : action === "catalog"
             ? "Cargando…"
             : catalog
-              ? "Actualizar proveedores"
+              ? "Actualizar"
               : "Cargar proveedores"}
         </button>
       </div>

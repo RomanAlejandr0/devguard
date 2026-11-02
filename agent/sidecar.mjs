@@ -10,11 +10,14 @@ import { Type } from 'typebox';
 import { readers } from './tools/registry.mjs';
 import { validateReport } from './report.mjs';
 import { validateProjectPackages } from './project-packages.mjs';
+import { analyzeRepository } from './repository-analysis.mjs';
+import { repositoryStore } from './repository-store.mjs';
 const { AuthStorage } = await import(new URL('./core/auth-storage.js', import.meta.resolve('@earendil-works/pi-coding-agent')));
 const root = dirname(fileURLToPath(import.meta.url));
 const dataDir = process.env.DEVGUARD_PI_DIR;
 if (!dataDir) throw Error('DEVGUARD_PI_DIR requerido');
 await mkdir(dataDir, {recursive:true, mode:0o700}); await chmod(dataDir,0o700);
+const repositories = repositoryStore(dataDir);
 const auth = AuthStorage.create(join(dataDir,'auth.json'));
 async function installationId() {
  const path=join(dataDir,'installation-id');
@@ -110,10 +113,33 @@ async function analyzeProject() {
   progress('Lista de paquetes completada por Pi');return report;
  }finally{session?.dispose();session=undefined;if(operation===controller)operation=undefined;}
 }
+async function runRepository() {
+ if(operation)throw Error('Ya hay una operación en curso');
+ const controller=new AbortController();operation=controller;
+ const configured=selection&&{...selection};
+ const timeout=setTimeout(()=>{controller.abort();void session?.abort();},600000);
+ try {
+  progress('Leyendo la carpeta autorizada…');
+  const snapshot=await bridge('repository_snapshot',{},controller.signal);
+  const skill=await readFile(join(root,'skills/repository-analysis/SKILL.md'),'utf8');
+  return await analyzeRepository({snapshot,selection:configured,skill,signal:controller.signal,progress,persist:report=>repositories.put(report),async makeSession(tools,prompt){
+   const r=await models();const model=configured&&r.getModel(configured.provider,configured.model);
+   if(!model)throw Error('Configura proveedor y modelo');
+   ({session}=await createAgentSession({cwd:dataDir,agentDir:dataDir,modelRuntime:r,model,thinkingLevel:'off',resourceLoader:emptyResources(prompt),tools:tools.map(t=>t.name),customTools:tools,sessionManager:SessionManager.inMemory(dataDir),settingsManager:SettingsManager.inMemory({compaction:{enabled:false},retry:{enabled:false},cacheWarming:{enabled:false}})}));
+   if(controller.signal.aborted){await session.abort();throw Error('Cancelado');}
+   controller.signal.addEventListener('abort',()=>void session?.abort(),{once:true});
+   return session;
+  }});
+ }finally{clearTimeout(timeout);session=undefined;if(operation===controller)operation=undefined;}
+}
 async function method(name,p={}) {
  if(name==='catalog')return catalog();
+ if(name==='repository_list')return (await repositories.list()).map(report=>report.state==='running'&&!operation?{...report,state:'interrupted',status:'orange',limitations:[...report.limitations,'El análisis se interrumpió al cerrar la aplicación. Vuelve a analizar.']}:report);
+ if(name==='repository_get'){const report=(await repositories.list()).find(r=>r.id===p.id);if(!report)throw Error('Repositorio desconocido');return report;}
+ if(name==='repository_remove'){if(operation)throw Error('Espera a que termine el análisis');await repositories.remove(p.id);return {removed:true};}
+ if(name==='analyze_repository')return runRepository();
  if(name==='skill_read'){
-  if(p.id!=='project-packages'&&!Object.hasOwn(readers,p.id))throw Error('Skill no permitida');
+  if(p.id!=='repository-analysis'&&p.id!=='project-packages'&&!Object.hasOwn(readers,p.id))throw Error('Skill no permitida');
   return {id:p.id,instructions:await readFile(join(root,'skills',p.id,'SKILL.md'),'utf8')};
  }
  if(name==='configure'){

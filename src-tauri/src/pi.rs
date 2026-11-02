@@ -22,6 +22,10 @@ const METHODS: &[&str] = &[
     "skill_read",
     "analyze",
     "analyze_project",
+    "analyze_repository",
+    "repository_list",
+    "repository_get",
+    "repository_remove",
     "configure",
     "cancel",
     "auth_set",
@@ -35,6 +39,7 @@ const TOOLS: &[&str] = &[
     "detect_tools",
     "collect_inventory",
     "read_package_files",
+    "repository_snapshot",
 ];
 type Reply = Result<Value, String>;
 type Pending = Arc<Mutex<HashMap<String, mpsc::Sender<Reply>>>>;
@@ -42,6 +47,7 @@ type Writer = Arc<Mutex<ChildStdin>>;
 
 #[derive(Clone, Default)]
 pub struct PiState {
+    pub repository_scan: Arc<Mutex<()>>,
     inner: Arc<PiInner>,
 }
 #[derive(Default)]
@@ -286,14 +292,14 @@ impl PiState {
             }
             return Err(error);
         }
-        let timeout = if matches!(method, "analyze" | "analyze_project") { 300 } else { 180 };
+        let timeout = if matches!(method, "analyze" | "analyze_project" | "analyze_repository") { 660 } else { 180 };
         match receiver.recv_timeout(Duration::from_secs(timeout)) {
             Ok(result) => result,
             Err(_) => {
                 if let Ok(mut pending) = pending.lock() {
                     pending.remove(&id);
                 }
-                if matches!(method, "analyze" | "analyze_project") {
+                if matches!(method, "analyze" | "analyze_project" | "analyze_repository") {
                     let cancel_id = format!(
                         "timeout-{}",
                         self.inner.sequence.fetch_add(1, Ordering::Relaxed)
@@ -444,6 +450,7 @@ fn dispatch_tool(tool: &str, selected: &Mutex<Option<PathBuf>>) -> Reply {
         "collect_inventory" => serde_json::to_value(crate::inventory::collect_inventory())
             .map_err(|_| "No se pudo preparar el inventario local.".into()),
         "read_package_files" => crate::project::package_files(&selected_project(selected)?),
+        "repository_snapshot" => crate::repository::snapshot(&selected_project(selected)?),
         _ => Err("Herramienta no autorizada.".into()),
     }
 }
