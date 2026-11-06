@@ -1,8 +1,16 @@
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from "@/components/ui/native-select";
+import { Button } from "@/components/ui/button";
 import { useEffect, useId, useRef, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import "./PiAgentPanel.css";
-import SkillInstructions from "./SkillInstructions";
 
 type Provider = {
   id: string;
@@ -12,22 +20,16 @@ type Provider = {
   methods: string[];
 };
 type Model = { id: string; name: string; provider: string };
-type Skill = { id: string; name: string; description: string };
-type Catalog = { providers: Provider[]; models: Model[]; skills: Skill[]; selection?: {provider: string; model: string} | null };
-type Finding = {
-  name: string;
-  category: string;
-  source: string;
-  evidence: string;
-  limitations: string[];
+type Catalog = {
+  providers: Provider[];
+  models: Model[];
+  selection?: { provider: string; model: string } | null;
 };
-type Analysis = { summary: string; findings: Finding[]; limitations: string[] };
 type PiEvent = {
   event: "progress" | "auth";
   data: { message?: string; url?: string; inputRequired?: boolean };
 };
-type Action = "check" | "catalog" | "analyze" | "login" | "save" | "logout" | "import";
-const LOG_LIMIT = 30;
+type Action = "check" | "catalog" | "login" | "save" | "logout" | "import";
 
 async function request<T>(
   method: string,
@@ -36,17 +38,13 @@ async function request<T>(
   return invoke<T>("pi_request", { method, params });
 }
 
-type Props = {
-  view: "analysis" | "settings";
-  onOpenSettings: () => void;
-};
-
-export default function PiAgentPanel({ view, onOpenSettings }: Props) {
+export default function PiAgentPanel() {
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [providerId, setProviderId] = useState("");
   const [modelId, setModelId] = useState("");
-  const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
-  const [connectionMode, setConnectionMode] = useState<"oauth" | "api_key">("oauth");
+  const [connectionMode, setConnectionMode] = useState<"oauth" | "api_key">(
+    "oauth",
+  );
   const [editingConnection, setEditingConnection] = useState(false);
   const [verified, setVerified] = useState<Record<string, boolean>>({});
   const [apiKey, setApiKey] = useState("");
@@ -59,8 +57,6 @@ export default function PiAgentPanel({ view, onOpenSettings }: Props) {
   const [cancelling, setCancelling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [logs, setLogs] = useState<string[]>([]);
-  const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const alive = useRef(false);
   const activeAction = useRef<Action | null>(null);
   const inputInFlight = useRef(false);
@@ -77,10 +73,17 @@ export default function PiAgentPanel({ view, onOpenSettings }: Props) {
   const supportsKey = supported.some((method) => /key|token/.test(method));
   const busy = action !== null;
   const connectionKey = `${providerId}:${modelId}`;
-  const isVerified = Boolean(provider?.authenticated && verified[connectionKey]);
+  const isVerified = Boolean(
+    provider?.authenticated && verified[connectionKey],
+  );
   const showConnectionForm = !provider?.authenticated || editingConnection;
-  const oauthMode = supportsOAuth && (connectionMode === "oauth" || !supportsKey);
-  const connectionLabel = !provider?.authenticated ? "Sin conexión" : isVerified ? "Conexión comprobada" : "Credencial guardada · sin comprobar";
+  const oauthMode =
+    supportsOAuth && (connectionMode === "oauth" || !supportsKey);
+  const connectionLabel = !provider?.authenticated
+    ? "Sin conexión"
+    : isVerified
+      ? "Conexión comprobada"
+      : "Credencial guardada · sin comprobar";
 
   function safeMessage(message: string) {
     let safe = message;
@@ -99,10 +102,6 @@ export default function PiAgentPanel({ view, onOpenSettings }: Props) {
     if (isTauri()) {
       const ready = listen<PiEvent>("pi-event", ({ payload }) => {
         if (!active || !activeAction.current) return;
-        if (payload.event === "progress" && payload.data.message) {
-          const message = safeMessage(payload.data.message);
-          setLogs((current) => [...current.slice(-(LOG_LIMIT - 1)), message]);
-        }
         if (payload.event === "auth") {
           setAuthPrompt(
             payload.data.message
@@ -129,7 +128,6 @@ export default function PiAgentPanel({ view, onOpenSettings }: Props) {
       alive.current = false;
       unlisten?.();
       if (
-        activeAction.current === "analyze" ||
         activeAction.current === "login" ||
         activeAction.current === "check"
       ) {
@@ -141,11 +139,18 @@ export default function PiAgentPanel({ view, onOpenSettings }: Props) {
   useEffect(() => {
     if (!catalog || !providerId || !modelId || !isTauri()) return;
     let current = true;
-    void request("configure", {provider:providerId,model:modelId}).catch(() => {
-      if (current) setError("No se pudo guardar el proveedor y modelo para repositorios. Vuelve a seleccionarlos.");
-    });
-    return () => {current=false;};
-  }, [catalog,providerId,modelId]);
+    void request("configure", { provider: providerId, model: modelId }).catch(
+      () => {
+        if (current)
+          setError(
+            "No se pudo guardar el proveedor y modelo para repositorios. Vuelve a seleccionarlos.",
+          );
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [catalog, providerId, modelId]);
 
   function applyCatalog(next: Catalog) {
     setCatalog(next);
@@ -163,9 +168,6 @@ export default function PiAgentPanel({ view, onOpenSettings }: Props) {
         nextModels.find((entry) => entry.id === next.selection?.model)?.id ??
         nextModels[0]?.id ??
         "",
-    );
-    setSelectedSkills((current) =>
-      current.length ? current.filter((id) => next.skills.some((skill) => skill.id === id)) : next.skills.map(skill => skill.id),
     );
   }
 
@@ -188,7 +190,11 @@ export default function PiAgentPanel({ view, onOpenSettings }: Props) {
       if (alive.current) await work();
     } catch {
       if (["login", "save", "logout", "import"].includes(kind)) {
-        try { await refreshAuthentication(); } catch { /* Keep the last known state. */ }
+        try {
+          await refreshAuthentication();
+        } catch {
+          /* Keep the last known state. */
+        }
       }
       if (alive.current && !cancelled.current) {
         setError(
@@ -201,12 +207,10 @@ export default function PiAgentPanel({ view, onOpenSettings }: Props) {
                 : kind === "logout"
                   ? "No se pudo desconectar el proveedor."
                   : kind === "catalog"
-            ? "No pudimos cargar Pi. Comprueba que Node esté disponible y vuelve a intentarlo."
-            : kind === "import"
-              ? "No pudimos importar una sesión válida de Pi para este proveedor. Puedes iniciar sesión o configurar una clave."
-              : kind === "analyze"
-                ? "El análisis no pudo completarse. Revisa la conexión del proveedor y vuelve a intentarlo."
-                : "No pudimos completar la operación con el proveedor. Vuelve a intentarlo.",
+                    ? "No pudimos cargar Pi. Comprueba que Node esté disponible y vuelve a intentarlo."
+                    : kind === "import"
+                      ? "No pudimos importar una sesión válida de Pi para este proveedor. Puedes iniciar sesión o configurar una clave."
+                      : "No pudimos completar la operación con el proveedor. Vuelve a intentarlo.",
         );
       }
     } finally {
@@ -245,7 +249,6 @@ export default function PiAgentPanel({ view, onOpenSettings }: Props) {
       setApiKey("");
     }
     void run(kind, async () => {
-      setLogs([]);
       const method =
         kind === "login"
           ? "auth_login"
@@ -305,23 +308,6 @@ export default function PiAgentPanel({ view, onOpenSettings }: Props) {
     }
   }
 
-  function analyze() {
-    if (!provider?.authenticated || !modelId) return;
-    void run("analyze", async () => {
-      setLogs([]);
-      setAnalysis(null);
-      const result = await request<Analysis>("analyze", {
-        provider: provider.id,
-        model: modelId,
-        skills: selectedSkills,
-      });
-      if (alive.current && !cancelled.current) {
-        setAnalysis(result);
-        setVerified((current) => ({ ...current, [connectionKey]: true }));
-      }
-    });
-  }
-
   async function cancel() {
     if (cancelling || !activeAction.current) return;
     cancelled.current = true;
@@ -354,260 +340,336 @@ export default function PiAgentPanel({ view, onOpenSettings }: Props) {
     <section className="pi-panel" aria-labelledby={`${ids}-title`}>
       <div className="pi-heading">
         <div>
-          <h1 id={`${ids}-title`}>{view === "settings" ? "Configuración IA" : "Agente IA"}</h1>
-
+          <h1 id={`${ids}-title`}>Configuración IA</h1>
         </div>
-        <button
+        <Button
+          size="sm"
           className="pi-button"
           type="button"
           disabled={busy}
-          onClick={view === "settings" ? loadCatalog : onOpenSettings}
+          onClick={loadCatalog}
         >
-          {view !== "settings" ? "Configurar IA" : action === "catalog"
+          {action === "catalog"
             ? "Cargando…"
             : catalog
               ? "Actualizar"
               : "Cargar proveedores"}
-        </button>
+        </Button>
       </div>
-      <p className="pi-scope" hidden={view !== "analysis"}>
-        Al iniciar un análisis, se enviará el inventario al proveedor y modelo
-        elegidos. El agente trabaja en modo de solo lectura, sin acceso a una
-        terminal ni permiso para modificar tus herramientas.
-      </p>
       {catalog && (
         <>
-        <div className="pi-settings" hidden={view !== "settings"}>
-          <div className="pi-select-row">
-            <label htmlFor={`${ids}-provider`}>
-              Proveedor
-              <select
-                id={`${ids}-provider`}
-                value={providerId}
-                disabled={busy}
-                onChange={(event) => {
-                  const next = event.currentTarget.value;
-                  setProviderId(next);
-                  setModelId(
-                    catalog.models.find((model) => model.provider === next)
-                      ?.id ?? "",
-                  );
-                  setApiKey("");
-                  setEditingConnection(false);
-                  setConnectionMode("oauth");
-                  setError(null);
-                  setNotice(null);
-                }}
-              >
-                {catalog.providers.length === 0 && (
-                  <option value="">Sin proveedores disponibles</option>
-                )}
-                {catalog.providers.map((entry) => (
-                  <option key={entry.id} value={entry.id}>
-                    {entry.name}
-                    {entry.authenticated ? " · credencial guardada" : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label htmlFor={`${ids}-model`}>
-              Modelo
-              <select
-                id={`${ids}-model`}
-                value={modelId}
-                disabled={busy || models.length === 0}
-                onChange={(event) => { setModelId(event.currentTarget.value); setError(null); setNotice(null); }}
-              >
-                {models.length === 0 && (
-                  <option value="">Sin modelos disponibles</option>
-                )}
-                {models.map((model) => (
-                  <option key={model.id} value={model.id}>
-                    {model.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          {provider && (
-            <div className="pi-auth">
-              <div className="pi-auth-heading">
-                <strong className={`pi-connection ${isVerified ? "connected" : ""}`}>{connectionLabel}</strong>
-                {provider.authenticated && <span>{provider.credentialType === "oauth" ? "Acceso con cuenta / suscripción" : "Acceso con clave API"}</span>}
-              </div>
-              {provider.authenticated && (
-                <>
-                  <div className="pi-auth-actions">
-                    <button className="pi-button" type="button" disabled={busy || !modelId} onClick={checkConnection}>
-                      {action === "check" ? "Comprobando…" : "Comprobar conexión"}
-                    </button>
-                    <button className="pi-button pi-secondary" type="button" disabled={busy} onClick={() => { setEditingConnection(!editingConnection); setError(null); setNotice(null); }}>
-                      {editingConnection ? "Cerrar opciones" : "Cambiar conexión"}
-                    </button>
-                    <button className="pi-button pi-secondary" type="button" disabled={busy} onClick={() => authenticate("logout")}>Desconectar</button>
-                  </div>
-                  <p className="pi-auth-note">La comprobación envía una consulta breve al modelo, sin enviar tu inventario. Puede consumir uso del proveedor.</p>
-                </>
-              )}
-              {showConnectionForm && (
-                <div className="pi-connection-form">
-                  {supportsOAuth && supportsKey && (
-                    <div className="pi-methods" role="group" aria-label="Cómo conectar">
-                      <button className="pi-button" type="button" aria-pressed={oauthMode} disabled={busy} onClick={() => {setConnectionMode("oauth");setError(null);}}>Cuenta / suscripción</button>
-                      <button className="pi-button" type="button" aria-pressed={!oauthMode} disabled={busy} onClick={() => {setConnectionMode("api_key");setError(null);}}>Clave API</button>
-                    </div>
+          <Card className="pi-settings gap-0 shadow-none">
+            <div className="pi-select-row">
+              <Label htmlFor={`${ids}-provider`}>
+                Proveedor
+                <NativeSelect
+                  id={`${ids}-provider`}
+                  value={providerId}
+                  disabled={busy}
+                  onChange={(event) => {
+                    const next = event.currentTarget.value;
+                    setProviderId(next);
+                    setModelId(
+                      catalog.models.find((model) => model.provider === next)
+                        ?.id ?? "",
+                    );
+                    setApiKey("");
+                    setEditingConnection(false);
+                    setConnectionMode("oauth");
+                    setError(null);
+                    setNotice(null);
+                  }}
+                >
+                  {catalog.providers.length === 0 && (
+                    <NativeSelectOption value="">
+                      Sin proveedores disponibles
+                    </NativeSelectOption>
                   )}
-                  {oauthMode ? (
-                    <>
-                      <p className="pi-auth-note">Conecta tu cuenta mediante el inicio de sesión oficial del proveedor. No necesitas una clave API.</p>
-                      <button className="pi-button" type="button" disabled={busy} onClick={() => authenticate("login")}>
-                        {action === "login" ? "Esperando autorización…" : `Iniciar sesión en ${provider.name}`}
-                      </button>
-                    </>
-                  ) : supportsKey ? (
-                    <form className="pi-key-form" onSubmit={(event) => {event.preventDefault();authenticate("save");}}>
-                      <label htmlFor={`${ids}-key`}>Clave API
-                        <input id={`${ids}-key`} type="password" value={apiKey} disabled={busy} autoComplete="off" spellCheck={false} onChange={(event) => setApiKey(event.currentTarget.value)} placeholder="Clave del proveedor seleccionado" />
-                      </label>
-                      <button className="pi-button" type="submit" disabled={busy || !apiKey.trim()}>Guardar clave API</button>
-                    </form>
-                  ) : <p className="pi-auth-note">Este proveedor no ofrece un método de conexión compatible en esta pantalla.</p>}
-                  <details className="pi-import">
-                    <summary>Importar una conexión existente de Pi</summary>
-                    <p className="pi-auth-note">Copia la credencial de este proveedor desde Pi al almacenamiento privado de DevGuard.</p>
-                    <button className="pi-button pi-secondary" type="button" disabled={busy} onClick={() => authenticate("import")}>Importar conexión de Pi</button>
-                  </details>
-                </div>
-              )}
+                  {catalog.providers.map((entry) => (
+                    <NativeSelectOption key={entry.id} value={entry.id}>
+                      {entry.name}
+                      {entry.authenticated ? " · credencial guardada" : ""}
+                    </NativeSelectOption>
+                  ))}
+                </NativeSelect>
+              </Label>
+              <Label htmlFor={`${ids}-model`}>
+                Modelo
+                <NativeSelect
+                  id={`${ids}-model`}
+                  value={modelId}
+                  disabled={busy || models.length === 0}
+                  onChange={(event) => {
+                    setModelId(event.currentTarget.value);
+                    setError(null);
+                    setNotice(null);
+                  }}
+                >
+                  {models.length === 0 && (
+                    <NativeSelectOption value="">
+                      Sin modelos disponibles
+                    </NativeSelectOption>
+                  )}
+                  {models.map((model) => (
+                    <NativeSelectOption key={model.id} value={model.id}>
+                      {model.name}
+                    </NativeSelectOption>
+                  ))}
+                </NativeSelect>
+              </Label>
             </div>
-          )}
-        </div>
-        <div hidden={view !== "analysis"}>
-          <p className="pi-model-summary">
-            {provider?.name} · {models.find((model) => model.id === modelId)?.name || "Sin modelo"}
-            <span className={`pi-connection ${provider?.authenticated ? "connected" : ""}`}>
-              {connectionLabel}
-            </span>
-          </p>
-          <fieldset className="pi-skills" disabled={busy}>
-            <legend>Skills para este análisis</legend>
-            {catalog.skills.length === 0 ? (
-              <p>No hay skills disponibles.</p>
-            ) : (
-              catalog.skills.map((skill) => (
-                <div key={skill.id}>
-                <label className="pi-skill">
-                  <input
-                    type="checkbox"
-                    checked={selectedSkills.includes(skill.id)}
-                    onChange={(event) => {
-                      const checked = event.currentTarget.checked;
-                      setSelectedSkills((current) =>
-                        checked
-                          ? [...current, skill.id]
-                          : current.filter((id) => id !== skill.id),
-                      );
-                    }}
-                  />
-                  <span>
-                    <strong>{skill.name}</strong>
-                    <small>{skill.description}</small>
-                  </span>
-                </label>
-                <SkillInstructions id={skill.id} name={skill.name} />
+            {provider && (
+              <div className="pi-auth">
+                <div className="pi-auth-heading">
+                  <Badge
+                    variant="outline"
+                    className={`pi-connection ${isVerified ? "connected" : ""}`}
+                  >
+                    {connectionLabel}
+                  </Badge>
+                  {provider.authenticated && (
+                    <span>
+                      {provider.credentialType === "oauth"
+                        ? "Acceso con cuenta / suscripción"
+                        : "Acceso con clave API"}
+                    </span>
+                  )}
                 </div>
-              ))
+                {provider.authenticated && (
+                  <>
+                    <div className="pi-auth-actions">
+                      <Button
+                        size="sm"
+                        className="pi-button"
+                        type="button"
+                        disabled={busy || !modelId}
+                        onClick={checkConnection}
+                      >
+                        {action === "check"
+                          ? "Comprobando…"
+                          : "Comprobar conexión"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="pi-button"
+                        type="button"
+                        disabled={busy}
+                        onClick={() => {
+                          setEditingConnection(!editingConnection);
+                          setError(null);
+                          setNotice(null);
+                        }}
+                      >
+                        {editingConnection
+                          ? "Cerrar opciones"
+                          : "Cambiar conexión"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="pi-button"
+                        type="button"
+                        disabled={busy}
+                        onClick={() => authenticate("logout")}
+                      >
+                        Desconectar
+                      </Button>
+                    </div>
+                    <p className="pi-auth-note">
+                      La comprobación envía una consulta breve al modelo, sin
+                      enviar archivos del repositorio. Puede consumir uso del
+                      proveedor.
+                    </p>
+                  </>
+                )}
+                {showConnectionForm && (
+                  <div className="pi-connection-form">
+                    {supportsOAuth && supportsKey && (
+                      <div
+                        className="pi-methods"
+                        role="group"
+                        aria-label="Cómo conectar"
+                      >
+                        <Button
+                          size="sm"
+                          className="pi-button"
+                          type="button"
+                          aria-pressed={oauthMode}
+                          disabled={busy}
+                          onClick={() => {
+                            setConnectionMode("oauth");
+                            setError(null);
+                          }}
+                        >
+                          Cuenta / suscripción
+                        </Button>
+                        <Button
+                          size="sm"
+                          className="pi-button"
+                          type="button"
+                          aria-pressed={!oauthMode}
+                          disabled={busy}
+                          onClick={() => {
+                            setConnectionMode("api_key");
+                            setError(null);
+                          }}
+                        >
+                          Clave API
+                        </Button>
+                      </div>
+                    )}
+                    {oauthMode ? (
+                      <>
+                        <p className="pi-auth-note">
+                          Conecta tu cuenta mediante el inicio de sesión oficial
+                          del proveedor. No necesitas una clave API.
+                        </p>
+                        <Button
+                          size="sm"
+                          className="pi-button"
+                          type="button"
+                          disabled={busy}
+                          onClick={() => authenticate("login")}
+                        >
+                          {action === "login"
+                            ? "Esperando autorización…"
+                            : `Iniciar sesión en ${provider.name}`}
+                        </Button>
+                      </>
+                    ) : supportsKey ? (
+                      <form
+                        className="pi-key-form"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          authenticate("save");
+                        }}
+                      >
+                        <Label htmlFor={`${ids}-key`}>
+                          Clave API
+                          <Input
+                            id={`${ids}-key`}
+                            type="password"
+                            value={apiKey}
+                            disabled={busy}
+                            autoComplete="off"
+                            spellCheck={false}
+                            onChange={(event) =>
+                              setApiKey(event.currentTarget.value)
+                            }
+                            placeholder="Clave del proveedor seleccionado"
+                          />
+                        </Label>
+                        <Button
+                          size="sm"
+                          className="pi-button"
+                          type="submit"
+                          disabled={busy || !apiKey.trim()}
+                        >
+                          Guardar clave API
+                        </Button>
+                      </form>
+                    ) : (
+                      <p className="pi-auth-note">
+                        Este proveedor no ofrece un método de conexión
+                        compatible en esta pantalla.
+                      </p>
+                    )}
+                    <details className="pi-import">
+                      <summary>Importar una conexión existente de Pi</summary>
+                      <p className="pi-auth-note">
+                        Copia la credencial de este proveedor desde Pi al
+                        almacenamiento privado de DevGuard.
+                      </p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="pi-button"
+                        type="button"
+                        disabled={busy}
+                        onClick={() => authenticate("import")}
+                      >
+                        Importar conexión de Pi
+                      </Button>
+                    </details>
+                  </div>
+                )}
+              </div>
             )}
-          </fieldset>
-          <div className="pi-run-row">
-            <button
-              className="pi-button pi-primary"
-              type="button"
-              disabled={busy || !provider?.authenticated || !modelId}
-              onClick={analyze}
-            >
-              {action === "analyze" ? "Analizando…" : "Analizar inventario"}
-            </button>
-            {action === "analyze" && (
-              <button
-                className="pi-button pi-secondary"
-                type="button"
-                disabled={cancelling}
-                onClick={() => void cancel()}
-              >
-                {cancelling ? "Cancelando…" : "Cancelar"}
-              </button>
-            )}
-            {!provider?.authenticated && (
-              <p>Conecta el proveedor para iniciar.</p>
-            )}
-          </div>
-        </div>
+          </Card>
         </>
       )}
-      {!catalog && view === "analysis" && (
-        <p className="pi-scope">Configura una conexión para comenzar tu primer análisis.</p>
-      )}
-      <div hidden={view !== "settings"}>
-      {(action === "login" || action === "check") && (
-        <button className="pi-button pi-secondary" type="button" disabled={cancelling} onClick={() => void cancel()}>
-          {cancelling ? "Cancelando…" : "Cancelar operación"}
-        </button>
-      )}
-      {(authPrompt || authUrl || inputRequired) && (
-        <div className="pi-auth-prompt">
-          <p>{authPrompt || "Completa la autorización del proveedor."}</p>
-          {authUrl && (
-            <>
-              <label htmlFor={`${ids}-url`}>
-                Dirección de autorización
-                <input
-                  id={`${ids}-url`}
-                  className="pi-auth-url"
-                  readOnly
-                  value={authUrl}
-                  onFocus={(event) => event.currentTarget.select()}
-                />
-              </label>
-              <button
-                className="pi-button"
-                type="button"
-                onClick={() => void openAuthPage()}
+      <div>
+        {(action === "login" || action === "check") && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="pi-button"
+            type="button"
+            disabled={cancelling}
+            onClick={() => void cancel()}
+          >
+            {cancelling ? "Cancelando…" : "Cancelar operación"}
+          </Button>
+        )}
+        {(authPrompt || authUrl || inputRequired) && (
+          <div className="pi-auth-prompt">
+            <p>{authPrompt || "Completa la autorización del proveedor."}</p>
+            {authUrl && (
+              <>
+                <Label htmlFor={`${ids}-url`}>
+                  Dirección de autorización
+                  <Input
+                    id={`${ids}-url`}
+                    className="pi-auth-url"
+                    readOnly
+                    value={authUrl}
+                    onFocus={(event) => event.currentTarget.select()}
+                  />
+                </Label>
+                <Button
+                  size="sm"
+                  className="pi-button"
+                  type="button"
+                  onClick={() => void openAuthPage()}
+                >
+                  Abrir inicio de sesión
+                </Button>
+              </>
+            )}
+            {inputRequired && (
+              <form
+                className="pi-key-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void submitAuthInput();
+                }}
               >
-                Abrir inicio de sesión
-              </button>
-            </>
-          )}
-          {inputRequired && (
-            <form
-              className="pi-key-form"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void submitAuthInput();
-              }}
-            >
-              <label htmlFor={`${ids}-input`}>
-                Respuesta de autorización
-                <input
-                  id={`${ids}-input`}
-                  type="password"
-                  autoComplete="off"
-                  value={authInput}
-                  disabled={sendingInput || cancelling}
-                  onChange={(event) => setAuthInput(event.currentTarget.value)}
-                />
-              </label>
-              <button
-                className="pi-button"
-                type="submit"
-                disabled={sendingInput || cancelling || !authInput.trim()}
-              >
-                {sendingInput ? "Enviando…" : "Enviar respuesta"}
-              </button>
-            </form>
-          )}
-        </div>
-      )}
+                <Label htmlFor={`${ids}-input`}>
+                  Respuesta de autorización
+                  <Input
+                    id={`${ids}-input`}
+                    type="password"
+                    autoComplete="off"
+                    value={authInput}
+                    disabled={sendingInput || cancelling}
+                    onChange={(event) =>
+                      setAuthInput(event.currentTarget.value)
+                    }
+                  />
+                </Label>
+                <Button
+                  size="sm"
+                  className="pi-button"
+                  type="submit"
+                  disabled={sendingInput || cancelling || !authInput.trim()}
+                >
+                  {sendingInput ? "Enviando…" : "Enviar respuesta"}
+                </Button>
+              </form>
+            )}
+          </div>
+        )}
       </div>
       <div className="pi-feedback" aria-live="polite" aria-atomic="true">
         {error && (
@@ -616,70 +678,6 @@ export default function PiAgentPanel({ view, onOpenSettings }: Props) {
           </p>
         )}
         {notice && <p>{notice}</p>}
-      </div>
-      <div hidden={view !== "analysis"}>
-      {logs.length > 0 && (
-        <details className="pi-progress" open={busy || undefined}>
-          <summary>Actividad de Pi</summary>
-          <ol>
-            {logs.map((line, index) => (
-              <li key={`${index}:${line}`}>{line}</li>
-            ))}
-          </ol>
-        </details>
-      )}
-      {analysis && (
-        <div className="pi-result">
-          <h3>Resultado del análisis</h3>
-          <p className="pi-result-summary">{analysis.summary}</p>
-          {analysis.findings.length === 0 ? (
-            <p className="pi-empty-findings">
-              El agente no reportó hallazgos. Esto no garantiza que el entorno
-              esté libre de riesgos.
-            </p>
-          ) : (
-            <div className="pi-findings">
-              {analysis.findings.map((finding, index) => (
-                <article
-                  className="pi-finding"
-                  key={`${finding.name}:${index}`}
-                >
-                  <div>
-                    <h4>{finding.name}</h4>
-                    <span>{finding.category}</span>
-                  </div>
-                  <dl>
-                    <dt>Fuente</dt>
-                    <dd>{finding.source}</dd>
-                    <dt>Evidencia</dt>
-                    <dd>{finding.evidence}</dd>
-                  </dl>
-                  {finding.limitations.length > 0 && (
-                    <>
-                      <h5>Limitaciones</h5>
-                      <ul>
-                        {finding.limitations.map((item, itemIndex) => (
-                          <li key={itemIndex}>{item}</li>
-                        ))}
-                      </ul>
-                    </>
-                  )}
-                </article>
-              ))}
-            </div>
-          )}
-          {analysis.limitations.length > 0 && (
-            <div className="pi-limitations">
-              <h4>Limitaciones del análisis</h4>
-              <ul>
-                {analysis.limitations.map((item, index) => (
-                  <li key={index}>{item}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      )}
       </div>
     </section>
   );

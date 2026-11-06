@@ -1,3 +1,15 @@
+import { Card, CardFooter } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Plus, X } from "lucide-react";
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
 import { useEffect, useRef, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -190,13 +202,13 @@ export default function RepositoryDashboard({
     <section className="repositories" aria-labelledby="repositories-title">
       <header className="repository-heading">
         <h1 id="repositories-title">Repositorios</h1>
-        <button
+        <Button
           className="scan-button"
           disabled={busy || loading}
           onClick={() => void analyze()}
         >
-          <span aria-hidden="true">＋</span> Agregar
-        </button>
+          <Plus aria-hidden="true" /> Agregar
+        </Button>
       </header>
       <details className="repository-info">
         <summary>Información del análisis</summary>
@@ -207,9 +219,13 @@ export default function RepositoryDashboard({
             leídos al proveedor de IA configurado y consulta nombres y versiones
             en OSV. Los informes se guardan en este equipo.
           </p>
-          <button className="text-button" onClick={onSettings}>
+          <Button
+            variant="link"
+            className="text-button h-auto"
+            onClick={onSettings}
+          >
             Configurar proveedor
-          </button>
+          </Button>
           <SkillInstructions
             id="repository-analysis"
             name="Análisis de repositorios"
@@ -225,9 +241,13 @@ export default function RepositoryDashboard({
         <div role="status" className="repository-progress">
           <span className="progress-dot" />
           <span>{progress}</span>
-          <button className="text-button" onClick={() => void cancel()}>
+          <Button
+            variant="link"
+            className="text-button h-auto"
+            onClick={() => void cancel()}
+          >
             Cancelar
-          </button>
+          </Button>
         </div>
       )}
       {loading ? (
@@ -252,16 +272,23 @@ export default function RepositoryDashboard({
       ) : null}
       <div className="repository-grid">
         {reports.map((r) => (
-          <article key={r.id} className={`repository-card status-${r.status}`}>
-            <button
-              className="repository-select"
+          <Card
+            key={r.id}
+            className={`repository-card gap-0 py-0 shadow-none status-${r.status}`}
+          >
+            <Button
+              variant="ghost"
+              className="repository-select h-auto whitespace-normal rounded-none"
               onClick={() => setSelected(r.id)}
               aria-pressed={r.id === selected}
             >
-              <span className="repository-status">
+              <Badge
+                variant="ghost"
+                className="repository-status rounded-none p-0 font-normal"
+              >
                 <span />
                 {statusLabel(r)}
-              </span>
+              </Badge>
               <h2>{r.name}</h2>
               <div className="repository-metrics">
                 <span>
@@ -289,16 +316,26 @@ export default function RepositoryDashboard({
                   },
                 )}
               </small>
-            </button>
-            <div className="repository-card-actions">
-              <button disabled={busy} onClick={() => void analyze(r.id)}>
+            </Button>
+            <CardFooter className="repository-card-actions">
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={busy}
+                onClick={() => void analyze(r.id)}
+              >
                 Volver a analizar
-              </button>
-              <button disabled={busy} onClick={() => void remove(r.id)}>
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={busy}
+                onClick={() => void remove(r.id)}
+              >
                 Quitar
-              </button>
-            </div>
-          </article>
+              </Button>
+            </CardFooter>
+          </Card>
         ))}
       </div>
       {report && (
@@ -308,13 +345,15 @@ export default function RepositoryDashboard({
               <h2>{report.name}</h2>
               <p className="repository-path">{report.path}</p>
             </div>
-            <button
+            <Button
+              variant="ghost"
+              size="icon-sm"
               className="detail-close"
               aria-label="Cerrar detalle"
               onClick={() => setSelected(null)}
             >
-              ×
-            </button>
+              <X aria-hidden="true" />
+            </Button>
           </header>
           <section>
             <h3>Arquitectura</h3>
@@ -348,34 +387,34 @@ export default function RepositoryDashboard({
             <details>
               <summary>Ver paquetes</summary>
               <div className="dependency-scroll">
-                <table className="dependency-table">
-                  <thead>
-                    <tr>
-                      <th>Paquete</th>
-                      <th>Ecosistema</th>
-                      <th>Tipo</th>
-                      <th>Declarada</th>
-                      <th>Exacta</th>
-                      <th>Fuente</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+                <Table className="dependency-table">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Paquete</TableHead>
+                      <TableHead>Ecosistema</TableHead>
+                      <TableHead>Tipo</TableHead>
+                      <TableHead>Declarada</TableHead>
+                      <TableHead>Exacta</TableHead>
+                      <TableHead>Fuente</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {report.packages.map((p, i) => (
-                      <tr key={i}>
-                        <th>{p.name}</th>
-                        <td>{p.ecosystem}</td>
-                        <td>
+                      <TableRow key={i}>
+                        <TableHead scope="row">{p.name}</TableHead>
+                        <TableCell>{p.ecosystem}</TableCell>
+                        <TableCell>
                           {p.kind === "transitive" ? "Transitiva" : "Directa"}
-                        </td>
-                        <td>{p.declared}</td>
-                        <td>{p.version ?? "Sin resolver"}</td>
-                        <td>
+                        </TableCell>
+                        <TableCell>{p.declared}</TableCell>
+                        <TableCell>{p.version ?? "Sin resolver"}</TableCell>
+                        <TableCell>
                           {p.path}:{p.line}
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     ))}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
             </details>
           </section>

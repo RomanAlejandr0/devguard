@@ -1,3 +1,4 @@
+import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import "./App.css";
 import PiAgentPanel from "./PiAgentPanel";
@@ -47,10 +48,11 @@ export default function App() {
               { id: "settings", label: "Configuración IA" },
             ] as const
           ).map((item) => (
-            <button
+            <Button
               key={item.id}
               type="button"
-              className="section-link"
+              variant="ghost"
+              className="section-link h-auto justify-start"
               aria-current={view === item.id ? "page" : undefined}
               onClick={() => setView(item.id)}
             >
@@ -58,7 +60,7 @@ export default function App() {
               {view === item.id && (
                 <span className="section-dot" aria-hidden="true" />
               )}
-            </button>
+            </Button>
           ))}
         </nav>
       </aside>
@@ -68,10 +70,7 @@ export default function App() {
             <RepositoryDashboard onSettings={() => setView("settings")} />
           </div>
           <div hidden={view !== "settings"}>
-            <PiAgentPanel
-              view="settings"
-              onOpenSettings={() => setView("settings")}
-            />
+            <PiAgentPanel />
           </div>
         </div>
       </main>

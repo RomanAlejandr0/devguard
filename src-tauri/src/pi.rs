@@ -20,8 +20,6 @@ const LINE_LIMIT: usize = 2 * 1024 * 1024;
 const METHODS: &[&str] = &[
     "catalog",
     "skill_read",
-    "analyze",
-    "analyze_project",
     "analyze_repository",
     "repository_list",
     "repository_get",
@@ -35,12 +33,7 @@ const METHODS: &[&str] = &[
     "auth_logout",
     "auth_import",
 ];
-const TOOLS: &[&str] = &[
-    "detect_tools",
-    "collect_inventory",
-    "read_package_files",
-    "repository_snapshot",
-];
+const TOOLS: &[&str] = &["repository_snapshot"];
 type Reply = Result<Value, String>;
 type Pending = Arc<Mutex<HashMap<String, mpsc::Sender<Reply>>>>;
 type Writer = Arc<Mutex<ChildStdin>>;
@@ -292,14 +285,14 @@ impl PiState {
             }
             return Err(error);
         }
-        let timeout = if matches!(method, "analyze" | "analyze_project" | "analyze_repository") { 660 } else { 180 };
+        let timeout = if matches!(method, "analyze_repository") { 660 } else { 180 };
         match receiver.recv_timeout(Duration::from_secs(timeout)) {
             Ok(result) => result,
             Err(_) => {
                 if let Ok(mut pending) = pending.lock() {
                     pending.remove(&id);
                 }
-                if matches!(method, "analyze" | "analyze_project" | "analyze_repository") {
+                if matches!(method, "analyze_repository") {
                     let cancel_id = format!(
                         "timeout-{}",
                         self.inner.sequence.fetch_add(1, Ordering::Relaxed)
@@ -445,11 +438,6 @@ fn selected_project(selected: &Mutex<Option<PathBuf>>) -> Result<PathBuf, String
 }
 fn dispatch_tool(tool: &str, selected: &Mutex<Option<PathBuf>>) -> Reply {
     match tool {
-        "detect_tools" => serde_json::to_value(crate::detection::detect_tools())
-            .map_err(|_| "No se pudo preparar la detección local.".into()),
-        "collect_inventory" => serde_json::to_value(crate::inventory::collect_inventory())
-            .map_err(|_| "No se pudo preparar el inventario local.".into()),
-        "read_package_files" => crate::project::package_files(&selected_project(selected)?),
         "repository_snapshot" => crate::repository::snapshot(&selected_project(selected)?),
         _ => Err("Herramienta no autorizada.".into()),
     }
@@ -508,13 +496,15 @@ mod tests {
     use std::io::Cursor;
     #[test]
     fn restricts_methods_and_parameter_shape() {
-        assert!(validate_request("analyze", &json!({"prompt":"revisa"})).is_ok());
+        assert!(validate_request("analyze_repository", &json!({"prompt":"revisa"})).is_ok());
         assert!(validate_request("auth_import", &json!({})).is_ok());
+        assert!(validate_request("analyze", &json!({})).is_err());
+        assert!(validate_request("analyze_project", &json!({})).is_err());
         assert!(validate_request("exec", &json!({"command":"anything"})).is_err());
-        assert!(validate_request("analyze", &json!([])).is_err());
-        assert!(validate_request("analyze", &json!({"prompt":"a".repeat(LINE_LIMIT)})).is_err());
+        assert!(validate_request("analyze_repository", &json!([])).is_err());
+        assert!(validate_request("analyze_repository", &json!({"prompt":"a".repeat(LINE_LIMIT)})).is_err());
         assert!(dispatch_tool("exec", &Mutex::new(None)).is_err());
-        for removed in ["list_applications", "read_project"] {
+        for removed in ["list_applications", "read_project", "detect_tools", "collect_inventory", "read_package_files"] {
             assert!(!TOOLS.contains(&removed));
             assert!(dispatch_tool(removed, &Mutex::new(None)).is_err());
         }
